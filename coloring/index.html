@@ -64,6 +64,7 @@
   #tools {
     display: flex; flex-direction: column; gap: 8px; align-items: center;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+    position: relative; /* sticker panel anchors here, centered on screen */
   }
   .tool-row { display: flex; gap: 8px; align-items: center; justify-content: center; max-width: 100%; }
   .group {
@@ -100,18 +101,18 @@
   .icon svg { width: 22px; height: 22px; }
   .sub { display: flex; gap: 4px; }
   .sep { width: 2px; height: 26px; background: var(--line); border-radius: 2px; margin: 0 2px; }
-  .sticker-wrap { position: relative; }
   #stickerBtn .cur { font-size: 22px; line-height: 1; }
   #stickerPanel {
-    position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    width: max-content; max-width: calc(100vw - 16px);
     background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
     box-shadow: 0 8px 24px rgba(80, 60, 130, 0.18);
     padding: 10px; display: none; z-index: 10;
-    grid-template-columns: repeat(6, 44px); gap: 6px;
+    grid-template-columns: repeat(6, minmax(0, 44px)); gap: 6px;
   }
   #stickerPanel.open { display: grid; }
   #stickerPanel button {
-    width: 44px; height: 44px; padding: 0; font-size: 26px; line-height: 1;
+    width: 100%; height: auto; aspect-ratio: 1; padding: 0; font-size: 26px; line-height: 1;
     border-radius: 12px; border: 2px solid transparent; background: transparent;
   }
   #stickerPanel button.on { border-color: var(--accent); background: #efeafb; }
