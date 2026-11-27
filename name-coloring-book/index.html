@@ -16,7 +16,7 @@
     --accent: #8b7fd1;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; height: 100%; touch-action: manipulation; } /* no double-tap zoom */
   body {
     font-family: "Fredoka", "Arial Rounded MT Bold", system-ui, sans-serif;
     color: var(--ink);
@@ -520,6 +520,15 @@
       saveBtn.disabled = false;
     }
   });
+
+  // ---------- No zooming ----------
+  // iOS Safari ignores user-scalable=no, so block pinch and double-tap here too.
+  const noZoom = e => e.preventDefault();
+  ["gesturestart", "gesturechange", "gestureend"].forEach(t => document.addEventListener(t, noZoom));
+  document.addEventListener("touchmove", e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  document.addEventListener("dblclick", noZoom);
+  // Trackpad pinch on desktop arrives as ctrl+wheel.
+  document.addEventListener("wheel", e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
 
   syncUI();
   generate(document.getElementById("nameInput").value);
