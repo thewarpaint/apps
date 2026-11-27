@@ -62,9 +62,10 @@
   #paint { cursor: crosshair; }
 
   #tools {
-    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: center;
+    display: flex; flex-direction: column; gap: 8px; align-items: center;
     padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   }
+  .tool-row { display: flex; gap: 8px; align-items: center; justify-content: center; max-width: 100%; }
   .group {
     display: flex; gap: 6px; align-items: center;
     background: var(--panel); border-radius: 999px; padding: 6px 8px;
@@ -76,9 +77,16 @@
     flex-wrap: wrap; justify-content: center;
     gap: 8px; padding: 8px 10px; border-radius: 22px;
   }
-  @media (max-width: 520px) {
+  @media (max-width: 720px) {
     /* two even rows of six instead of a lopsided wrap */
     #palette { display: grid; grid-template-columns: repeat(6, 30px); }
+  }
+  @media (max-width: 480px) {
+    /* shrink swatches and action buttons so palette + actions share one row */
+    :root { --sw: clamp(22px, calc((100vw - 226px) / 6), 30px); }
+    #palette { gap: 6px; padding: 8px; grid-template-columns: repeat(6, var(--sw)); }
+    .swatch { width: var(--sw); height: var(--sw); }
+    #actions .icon { width: 36px; height: 36px; }
   }
   .swatch {
     width: 30px; height: 30px; border-radius: 50%; padding: 0;
@@ -133,7 +141,6 @@
 </div>
 
 <div id="tools">
-  <div class="group" id="palette" role="radiogroup" aria-label="Colors"></div>
   <div class="group">
     <div id="sizes" class="sub" aria-label="Brush size"></div>
     <span class="sep"></span>
@@ -150,7 +157,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 20L12 3l8 17" /><path d="M7.5 13h9"/><circle cx="12" cy="10" r="1.6" fill="#a0c4ff" stroke="none"/></svg>
     </button>
   </div>
-  <div class="group">
+  <div class="tool-row">
+  <div class="group" id="palette" role="radiogroup" aria-label="Colors"></div>
+  <div class="group" id="actions">
     <button class="icon" id="undoBtn" aria-label="Undo" title="Undo">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>
     </button>
@@ -160,6 +169,7 @@
     <button class="icon primary" id="saveBtn" aria-label="Save picture" title="Save picture" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
     </button>
+  </div>
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
