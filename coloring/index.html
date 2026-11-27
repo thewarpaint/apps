@@ -74,7 +74,10 @@
     overflow: hidden; touch-action: none;
   }
   #board canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-  #outline { pointer-events: none; }
+  #outline, #bg { pointer-events: none; }
+  button:disabled { opacity: .4; cursor: default; }
+  button:disabled:active { transform: none; }
+  header .icon { flex: none; }
   #paint { cursor: crosshair; }
 
   #tools {
@@ -198,11 +201,16 @@
   <form id="nameForm" autocomplete="off">
     <input id="nameInput" type="text" maxlength="20" placeholder="Type your name" value="Sofia" aria-label="Your name">
     <button class="primary" type="submit">Draw it!</button>
+    <button class="icon" type="button" id="photoBtn" aria-label="Color a picture" title="Color a picture">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="10" r="1.8" fill="#ffe5a0"/><path d="M4 17l5-5 4 4 2.5-2.5L20 18"/></svg>
+    </button>
+    <input type="file" id="photoInput" accept="image/*" hidden>
   </form>
 </header>
 
 <div id="stage">
   <div id="board">
+    <canvas id="bg"></canvas>
     <canvas id="paint"></canvas>
     <canvas id="outline"></canvas>
   </div>
@@ -271,6 +279,8 @@
   const outline = document.getElementById("outline");
   const pctx = paint.getContext("2d");
   const octx = outline.getContext("2d");
+  const bg = document.getElementById("bg");               // uploaded picture, under the paint
+  const bctx = bg.getContext("2d");
   const mask = document.createElement("canvas");      // filled letters
   const scratch = document.createElement("canvas");   // per-segment work area
   const mctx = mask.getContext("2d");
@@ -278,7 +288,9 @@
 
   const state = {
     color: COLORS[0], tool: "brush", sticker: STICKERS[0], sizeIdx: 1, inside: true,
-    W: 0, H: 0, drawing: false, last: null, undo: []
+    W: 0, H: 0, drawing: false, last: null, undo: [],
+    lay: null, // { lines, size } for a name, or { img, size } for a picture (size = cover scale)
+    src: null
   };
 
   // ---------- UI ----------
@@ -441,7 +453,24 @@
     state.name = name;
     state.undo = [];
     state.src = null;
+    syncMode();
     fitBoard();
+  }
+  // Picture mode: the photo replaces the name and fills the board (cover fit).
+  function usePicture(img) {
+    const { W, H } = canvasSize();
+    setCanvases(W, H, coverLay(img, W, H));
+    state.undo = [];
+    state.src = null;
+    syncMode();
+    fitBoard();
+  }
+  function coverLay(img, W, H) {
+    return { img, size: Math.max(W / img.width, H / img.height) };
+  }
+  function syncMode() {
+    // Nothing to stay inside of when coloring a picture.
+    insideBtn.disabled = !!state.lay.img;
   }
   function canvasSize() {
     const r = stage.getBoundingClientRect();
@@ -453,15 +482,22 @@
   }
   function setCanvases(W, H, lay) {
     state.W = W; state.H = H; state.lay = lay;
-    for (const c of [paint, outline, mask, scratch]) { c.width = W; c.height = H; }
-    drawText(mctx, lay, W, H, "mask");
-    drawText(octx, lay, W, H, "outline");
+    for (const c of [bg, paint, outline, mask, scratch]) { c.width = W; c.height = H; } // resizing clears them
+    if (lay.img) {
+      const w = lay.img.width * lay.size, h = lay.img.height * lay.size;
+      bctx.imageSmoothingQuality = "high";
+      bctx.drawImage(lay.img, (W - w) / 2, (H - h) / 2, w, h);
+      mctx.fillRect(0, 0, W, H); // whole board is paintable
+    } else {
+      drawText(mctx, lay, W, H, "mask");
+      drawText(octx, lay, W, H, "outline");
+    }
   }
 
-  // When the stage changes shape (e.g. the phone rotates), re-fit the name to
-  // the new shape and carry the coloring across. The text is centred and every
-  // offset scales with its size, so scaling the paint about the centre by the
-  // same factor keeps it lined up with the letters.
+  // When the stage changes shape (e.g. the phone rotates), re-fit the name or
+  // picture to the new shape and carry the coloring across. Both are centred
+  // and scale with lay.size, so scaling the paint about the centre by the same
+  // factor keeps it lined up with them.
   function relayout() {
     if (!state.W || state.drawing) return;
     const { W, H } = canvasSize();
@@ -478,7 +514,8 @@
     const src = state.src;
     // Once painted, keep the same line breaks so the paint still lines up.
     const painted = src.undo.length > 0;
-    const lay = painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
+    const lay = src.lay.img ? coverLay(src.lay.img, W, H)
+      : painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
     const s = lay.size / src.lay.size, oW = src.W, oH = src.H;
     const remap = from => {
       const c = document.createElement("canvas");
@@ -594,6 +631,31 @@
     document.getElementById("nameInput").blur();
     generate(document.getElementById("nameInput").value);
   });
+  const photoInput = document.getElementById("photoInput");
+  document.getElementById("photoBtn").onclick = () => photoInput.click();
+  photoInput.addEventListener("change", async () => {
+    const f = photoInput.files[0];
+    photoInput.value = "";
+    if (!f) return;
+    const url = URL.createObjectURL(f);
+    try {
+      const img = new Image();
+      img.src = url;
+      await img.decode();
+      // Keep a copy at most 2200px on its longest side: big phone photos are
+      // far larger than the board and would waste memory.
+      const k = Math.min(1, 2200 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.naturalWidth * k));
+      c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      usePicture(c);
+    } catch (err) {
+      say("Couldn't open that picture.");
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  });
   let relayoutTimer;
   window.addEventListener("resize", () => {
     fitBoard();
@@ -612,17 +674,19 @@
     toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
   }
   function flatten() {
-    // paper + paint + outline, exactly as shown on screen
+    // paper + picture + paint + outline, exactly as shown on screen
     const c = document.createElement("canvas");
     c.width = state.W; c.height = state.H;
     const x = c.getContext("2d");
     x.fillStyle = "#fffdf8";
     x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(bg, 0, 0);
     x.drawImage(paint, 0, 0);
     x.drawImage(outline, 0, 0);
     return new Promise(res => c.toBlob(res, "image/png"));
   }
   function fileName() {
+    if (state.lay && state.lay.img) return "my-picture-coloring.png";
     const n = document.getElementById("nameInput").value.trim()
       .replace(/[^\p{L}\p{N} _-]/gu, "").replace(/\s+/g, "-").slice(0, 20);
     return (n || "my-name") + "-coloring.png";

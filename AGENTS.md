@@ -6,7 +6,7 @@ Small single-page apps, each a self-contained `index.html` (inline CSS and JS) i
 |---|---|---|
 | `smoking-log/` | Cigarettes per day, streaks, month heatmap | `localStorage['smoke.log.v1']`: `{"YYYY-MM-DD": count}` |
 | `fridge-tracker/` | Items sorted by expiry, optional photos | `localStorage['fridge.items.v1']`: `[{id, name, photo, exp, added}]`. Photos are JPEG data URLs, so mind the ~5MB quota |
-| `coloring/` | Type a name, color it in, add stickers | None. Pictures are saved as PNG downloads |
+| `coloring/` | Type a name or upload a picture, color it in, add stickers | None. Pictures are saved as PNG downloads |
 
 Never rename a storage key without migrating the data, or users lose it.
 
@@ -35,13 +35,16 @@ Never rename a storage key without migrating the data, or users lose it.
 - **iOS:** a home-screen app has its own storage, separate from Safari's. It's also exempt from Safari's 7-day data deletion.
 
 ## Coloring book specifics
-- **Canvas layers:** `#paint` holds strokes and stickers; `#outline` holds the letter outlines. Off-screen, `mask` holds the filled letters (used for "stay inside" clipping) and `scratch` is a per-segment work area.
+- **Canvas layers:** `#bg` holds an uploaded picture, `#paint` holds strokes and stickers, and `#outline` holds the letter outlines. Off-screen, `mask` holds the filled letters (used for "stay inside" clipping) and `scratch` is a per-segment work area.
+- **Name vs picture:** `state.lay` is `{lines, size}` for a name or `{img, size}` for a picture, where `size` is the cover-fit scale. Both are centred.
+  - The photo button (`#photoBtn`) loads an image, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That cover-fits it into `#bg`, clears the letters, paint and undo history, fills `mask` so the whole board is paintable, and disables stay-inside.
+  - "Draw it!" (`generate()`) goes back to a name. Saving flattens paper, picture, paint and outline.
 - **Toolbar:**
   - The top row holds brush sizes, eraser, stickers and the stay-inside toggle.
   - Below it, the palette and the undo/clear/save group share one row, centred vertically.
   - At 720px wide or less, the palette is two rows of six. At 480px or less, swatches and action buttons shrink so that row still fits. At 350px or less, gaps tighten too.
   - On landscape phones (`orientation: landscape` and `max-height: 500px`), the body becomes a grid with `#tools` set to `display: contents`. `#toolGroup` becomes a column on the left, and `.tool-row` (a 2-column palette over the actions) a column on the right. The sticker panel then anchors to `#toolGroup` and opens to its right.
-- **Board resize:** when the stage's aspect ratio changes by more than 15% (for example, the phone rotates), `relayout()` re-fits the name and scales the paint and undo snapshots about the centre by the text-size ratio. Once painted, it keeps the same line breaks. It always re-maps from `state.src`, the last canvas the user drew on, so rotating back restores anything clipped and repeated rotations don't add blur. Any edit (`pushUndo`, `undo`, `generate`) resets `state.src`.
+- **Board resize:** when the stage's aspect ratio changes by more than 15% (for example, the phone rotates), `relayout()` re-fits the name or picture and scales the paint and undo snapshots about the centre by the ratio of the old and new `lay.size`. Once painted, it keeps the same line breaks. It always re-maps from `state.src`, the last canvas the user drew on, so rotating back restores anything clipped and repeated rotations don't add blur. Any edit (`pushUndo`, `undo`, `generate`) resets `state.src`.
 - **Sticker panel:** in portrait it's anchored to `#tools` (`position: relative`) so it stays on screen. In landscape it anchors to `#toolGroup`.
 - **Sticker button:** it cycles stickers every 5s until the sticker tool is active, then shows the chosen sticker.
 - **Zoom is blocked on purpose:** gesture events, multi-touch moves, `dblclick` and ctrl+wheel are all cancelled, and `touch-action: manipulation` is set. Keyboard zoom still works.
