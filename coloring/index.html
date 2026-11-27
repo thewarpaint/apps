@@ -105,6 +105,13 @@
     .swatch { width: var(--sw); height: var(--sw); }
     #actions .icon { width: 36px; height: 36px; }
   }
+  @media (max-width: 350px) {
+    /* smallest phones: tighten spacing so the row still fits at 320px */
+    .tool-row { gap: 6px; }
+    #palette { gap: 4px; padding: 6px; }
+    #actions { gap: 4px; padding: 6px; }
+    #actions .icon { width: 32px; height: 32px; }
+  }
   .swatch {
     width: 30px; height: 30px; border-radius: 50%; padding: 0;
     border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line);
@@ -148,6 +155,41 @@
     transition: opacity .2s, transform .2s; z-index: 20;
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* Phones on their side: the tools become columns either side of the board.
+     Left: sizes/eraser/stickers/stay-inside. Right: palette over actions. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    :root { --sw: clamp(20px, calc((100vh - 212px) / 6), 30px); }
+    body {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas: "left header right" "left stage right";
+    }
+    header { grid-area: header; padding: 8px 4px; flex-wrap: nowrap; }
+    header h1 { font-size: 17px; }
+    form { min-width: 0; }
+    input[type=text] { padding: 6px 12px; font-size: 16px; }
+    header button { padding: 6px 12px; }
+    #stage { grid-area: stage; margin: 0 4px 8px; }
+    #tools { display: contents; }
+    #toolGroup {
+      grid-area: left; align-self: center; margin-left: 10px;
+      flex-direction: column; border-radius: 26px; padding: 8px 6px;
+      position: relative; /* sticker panel anchors here instead of #tools */
+    }
+    #toolGroup .sub { flex-direction: column; }
+    #toolGroup .sep { width: 26px; height: 2px; margin: 2px 0; }
+    .tool-row { grid-area: right; align-self: center; flex-direction: column; margin-right: 10px; }
+    #palette { display: grid; grid-template-columns: repeat(2, var(--sw)); gap: 5px; padding: 8px; }
+    .swatch { width: var(--sw); height: var(--sw); }
+    #actions { flex-direction: column; border-radius: 26px; padding: 6px; }
+    #actions .icon { width: 36px; height: 36px; }
+    #stickerPanel {
+      bottom: auto; top: 50%; left: calc(100% + 10px); transform: translateY(-50%);
+      max-width: calc(100vw - 100px);
+    }
+  }
 </style>
 </head>
 <body>
@@ -167,7 +209,7 @@
 </div>
 
 <div id="tools">
-  <div class="group">
+  <div class="group" id="toolGroup">
     <div id="sizes" class="sub" aria-label="Brush size"></div>
     <span class="sep"></span>
     <button class="tool icon" id="eraserBtn" aria-label="Eraser" title="Eraser">
@@ -344,14 +386,17 @@
     const words = text.trim().split(/\s+/).filter(Boolean);
     const candidates = [[words.join(" ")]];
     for (let n = 2; n <= Math.min(3, words.length); n++) candidates.push(wrapInto(words, n));
-    octx.font = `700 100px ${FONT}`;
     let best = null;
     for (const lines of candidates) {
-      const maxW = Math.max(...lines.map(l => octx.measureText(l).width)) / 100;
-      const size = Math.min((W * 0.88) / maxW, (H * 0.82) / (lines.length * 1.08));
-      if (!best || size > best.size) best = { lines, size };
+      const lay = fitLines(lines, W, H);
+      if (!best || lay.size > best.size) best = lay;
     }
     return best;
+  }
+  function fitLines(lines, W, H) {
+    octx.font = `700 100px ${FONT}`;
+    const maxW = Math.max(...lines.map(l => octx.measureText(l).width)) / 100;
+    return { lines, size: Math.min((W * 0.88) / maxW, (H * 0.82) / (lines.length * 1.08)) };
   }
   function wrapInto(words, n) {
     // balanced split by character count
@@ -390,17 +435,64 @@
   async function generate(name) {
     name = (name || "").slice(0, 20).trim() || "Hi!";
     try { await document.fonts.load(`700 100px "Fredoka"`, name); } catch (e) {}
+    const { W, H } = canvasSize();
+    const lay = layoutText(name, W, H);
+    setCanvases(W, H, lay);
+    state.name = name;
+    state.undo = [];
+    state.src = null;
+    fitBoard();
+  }
+  function canvasSize() {
     const r = stage.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     let W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
     const cap = 2200 / Math.max(W, H);
     if (cap < 1) { W = Math.round(W * cap); H = Math.round(H * cap); }
-    state.W = W; state.H = H;
+    return { W, H };
+  }
+  function setCanvases(W, H, lay) {
+    state.W = W; state.H = H; state.lay = lay;
     for (const c of [paint, outline, mask, scratch]) { c.width = W; c.height = H; }
-    const lay = layoutText(name, W, H);
     drawText(mctx, lay, W, H, "mask");
     drawText(octx, lay, W, H, "outline");
-    state.undo = [];
+  }
+
+  // When the stage changes shape (e.g. the phone rotates), re-fit the name to
+  // the new shape and carry the coloring across. The text is centred and every
+  // offset scales with its size, so scaling the paint about the centre by the
+  // same factor keeps it lined up with the letters.
+  function relayout() {
+    if (!state.W || state.drawing) return;
+    const { W, H } = canvasSize();
+    if (!W || !H || Math.abs((W / H) / (state.W / state.H) - 1) < 0.15) return;
+    // Always re-map from the last layout the child actually drew on, so
+    // rotating back and forth never loses paint that fell off the edge of a
+    // narrower shape, and doesn't blur it with repeated resampling.
+    if (!state.src) {
+      const c = document.createElement("canvas");
+      c.width = state.W; c.height = state.H;
+      c.getContext("2d").drawImage(paint, 0, 0);
+      state.src = { canvas: c, undo: state.undo.slice(), lay: state.lay, W: state.W, H: state.H };
+    }
+    const src = state.src;
+    // Once painted, keep the same line breaks so the paint still lines up.
+    const painted = src.undo.length > 0;
+    const lay = painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
+    const s = lay.size / src.lay.size, oW = src.W, oH = src.H;
+    const remap = from => {
+      const c = document.createElement("canvas");
+      c.width = W; c.height = H;
+      const x = c.getContext("2d");
+      x.imageSmoothingQuality = "high";
+      x.translate(W / 2, H / 2); x.scale(s, s); x.translate(-oW / 2, -oH / 2);
+      x.drawImage(from, 0, 0);
+      return c;
+    };
+    const kept = remap(src.canvas);
+    state.undo = src.undo.map(remap);
+    setCanvases(W, H, lay);
+    pctx.drawImage(kept, 0, 0);
     fitBoard();
   }
 
@@ -459,6 +551,7 @@
   }
 
   function pushUndo() {
+    state.src = null; // the canvas is about to change: it becomes the new source
     const c = document.createElement("canvas");
     c.width = state.W; c.height = state.H;
     c.getContext("2d").drawImage(paint, 0, 0);
@@ -468,6 +561,7 @@
   function undo() {
     const c = state.undo.pop();
     if (!c) return;
+    state.src = null;
     pctx.clearRect(0, 0, state.W, state.H);
     pctx.drawImage(c, 0, 0);
   }
@@ -500,7 +594,12 @@
     document.getElementById("nameInput").blur();
     generate(document.getElementById("nameInput").value);
   });
-  window.addEventListener("resize", fitBoard);
+  let relayoutTimer;
+  window.addEventListener("resize", () => {
+    fitBoard();
+    clearTimeout(relayoutTimer);
+    relayoutTimer = setTimeout(relayout, 200);
+  });
 
   // ---------- Save picture ----------
   const saveBtn = document.getElementById("saveBtn");
