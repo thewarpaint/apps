@@ -35,10 +35,17 @@ Never rename a storage key without migrating the data, or users lose it.
 - **iOS:** a home-screen app has its own storage, separate from Safari's. It's also exempt from Safari's 7-day data deletion.
 
 ## Coloring book specifics
-- **Canvas layers:** `#bg` holds an uploaded picture, `#paint` holds strokes and stickers, and `#outline` holds the letter outlines. Off-screen, `mask` holds the filled letters (used for "stay inside" clipping) and `scratch` is a per-segment work area.
-- **Name vs picture:** `state.lay` is `{lines, size}` for a name or `{img, size}` for a picture, where `size` is the cover-fit scale. Both are centred.
-  - The photo button (`#photoBtn`) loads an image, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That cover-fits it into `#bg`, clears the letters, paint and undo history, fills `mask` so the whole board is paintable, and disables stay-inside.
+- **Canvas layers:** `#bg` holds an uploaded picture in Photo view, `#paint` holds strokes and stickers, and `#outline` holds the letter outlines or a picture's lines. Off-screen, `mask` holds the filled letters (used for "stay inside" clipping) and `scratch` is a per-segment work area.
+- **Name vs picture:** `state.lay` is `{lines, size}` for a name, or for a picture `{img, art, kind, view, id, size}`, where `size` is the cover-fit scale. Both are centred.
+  - The photo button (`#photoBtn`) loads an image, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That shows the photo at once (`view: "photo"`), clears the letters, paint and undo history, and calls `makeLines()`.
+  - `setCanvases()` resizes the canvases and calls `drawLayers()`. `drawLayers()` redraws everything except the paint, so switching view or detail keeps the coloring.
   - "Draw it!" (`generate()`) goes back to a name. Saving flattens paper, picture, paint and outline.
+  - **Picture to coloring page:** the inline worker (`#convWorkerSrc`, started from a blob URL) gets the picture at up to 1000px and returns a line mask. `kind` is one of:
+    - `lineart`: little colour, few in-between greys, mostly paper after dividing out the lighting. Thresholded. If more than 20% is ink, it's treated as a silhouette and only its outline is kept.
+    - `flat`: in-between greys under 12% (cartoons). Drawn dark lines are kept, and colour edges are added only away from them.
+    - `photo`: Canny-style edges. The Detail slider keeps 5–35% of the strongest ridges. The worker caches the edges per `id`, so moving the slider only re-thresholds.
+  - Lines are drawn into `#outline` in the outline colour. Results for a stale `id` are dropped. The Lines/Photo toggle and Detail slider sit in `#picTools` over the board.
+  - **Stay-inside on pictures:** `findRegions()` labels the closed shapes between the lines, thickening the lines by 2px to close gaps, and records each shape's bounding box. On pointerdown with the brush, `regionMask()` sets `mask` to the shape under the pointer grown by 4px, working only inside its bounding box. Starting on a line paints freely. Stay-inside is disabled in Photo view.
   - Clear on a picture removes the picture too and goes back to the name. The picture and its paint are snapshotted into `state.restore`, and Undo with an empty undo stack restores them, re-fitted to the current board. `generate()` and `usePicture()` drop the snapshot.
 - **Toolbar:**
   - The top row holds brush sizes, eraser, stickers and the stay-inside toggle.

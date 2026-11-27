@@ -76,6 +76,21 @@
   #board canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #outline, #bg { pointer-events: none; }
   button:disabled { opacity: .4; cursor: default; }
+  /* Picture controls, shown over the bottom of the board while coloring a picture */
+  #picTools {
+    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 5;
+    display: flex; gap: 8px; align-items: center; max-width: calc(100% - 16px);
+    background: rgba(255, 255, 255, .92); border: 2px solid var(--line); border-radius: 999px;
+    padding: 4px 6px; box-shadow: 0 2px 10px rgba(80, 60, 130, 0.15);
+  }
+  #picTools[hidden] { display: none; }
+  .seg { display: flex; gap: 2px; flex: none; }
+  .seg button { padding: 4px 10px; font-size: 14px; min-height: 32px; }
+  .seg button[aria-pressed="true"] { background: #efeafb; border-color: var(--accent); }
+  #detailWrap { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
+  #detailWrap[hidden], #picBusy[hidden] { display: none; }
+  #detail { width: 90px; min-width: 50px; accent-color: var(--accent); }
+  #picBusy { font-size: 13px; font-weight: 600; padding: 0 6px; white-space: nowrap; }
   button:disabled:active { transform: none; }
   header .icon { flex: none; }
   #paint { cursor: crosshair; }
@@ -214,6 +229,14 @@
     <canvas id="paint"></canvas>
     <canvas id="outline"></canvas>
   </div>
+  <div id="picTools" hidden>
+    <div class="seg" role="group" aria-label="Show">
+      <button type="button" id="viewLines" aria-pressed="true">Lines</button>
+      <button type="button" id="viewPhoto" aria-pressed="false">Photo</button>
+    </div>
+    <label id="detailWrap" hidden>Detail <input type="range" id="detail" min="0" max="1" step="0.05" value="0.35"></label>
+    <span id="picBusy" hidden>Making lines…</span>
+  </div>
 </div>
 
 <div id="tools">
@@ -255,6 +278,216 @@
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script type="text/plain" id="convWorkerSrc">
+"use strict";
+// Picture -> coloring page. Runs in a Web Worker so the page stays responsive.
+// Input: RGBA pixels (at most ~1000px). Output: a line mask (255 = line).
+let cur = null; // edge data for the last photo, reused when only the detail changes
+
+self.onmessage = e => {
+  const m = e.data;
+  if (cur && cur.id === m.id) return post(m.id, "photo", cur.w, cur.h, edgeLines(cur, photoKeep(m.detail)));
+  analyze(m);
+};
+function post(id, kind, w, h, lines) { self.postMessage({ id, kind, w, h, lines }, [lines.buffer]); }
+
+function analyze({ id, w, h, data, detail }) {
+  const n = w * h, S = Math.max(w, h), px = new Uint8ClampedArray(data);
+  const L = new Float32Array(n);
+  let colorful = 0;
+  for (let i = 0, p = 0; p < n; i += 4, p++) {
+    const r = px[i], g = px[i + 1], b = px[i + 2];
+    L[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (Math.max(r, g, b) - Math.min(r, g, b) > 48) colorful++;
+  }
+  // Estimate the paper brightness everywhere (blur of a max filter) and divide
+  // by it, so shadows on a photographed page still read as paper.
+  const paperLum = boxBlur(maxFilter(L, w, h, Math.max(3, Math.round(S / 150))), w, h, Math.max(8, Math.round(S / 50)));
+  const v = new Float32Array(n);
+  let paper = 0, ink = 0, mid = 0;
+  for (let p = 0; p < n; p++) {
+    const x = L[p] / Math.max(40, paperLum[p]);
+    v[p] = x;
+    if (x > 0.85) paper++; else if (x < 0.55) ink++; else mid++;
+  }
+  // Black-and-white drawing: little colour, few in-between greys, mostly paper.
+  if (colorful / n < 0.04 && mid / n < 0.12 && paper / n > 0.55 && ink / n > 0.003) {
+    let lines = new Uint8Array(n), inkPx = 0;
+    for (let p = 0; p < n; p++) if (v[p] < 0.7) { lines[p] = 255; inkPx++; }
+    if (inkPx / n > 0.2) {
+      // Mostly ink, e.g. a silhouette: keep only its outline.
+      const edge = new Uint8Array(n);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const p = y * w + x;
+        if (lines[p] && (x === 0 || y === 0 || x === w - 1 || y === h - 1 ||
+            !lines[p - 1] || !lines[p + 1] || !lines[p - w] || !lines[p + w])) edge[p] = 255;
+      }
+      lines = dilate(edge, w, h, lineRadius(S));
+    }
+    removeSmall(lines, w, h, Math.round(n * 0.00003));
+    cur = null;
+    return post(id, "lineart", w, h, lines);
+  }
+  // Anything else: Canny-style edges. Smooth, take the gradient, then thin it
+  // to 1px ridges (non-maximum suppression).
+  const B = boxBlur(boxBlur(L, w, h, 2), w, h, 2);
+  const mag = new Float32Array(n), dir = new Uint8Array(n), nms = new Float32Array(n);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x;
+    const gx = -B[p - w - 1] - 2 * B[p - 1] - B[p + w - 1] + B[p - w + 1] + 2 * B[p + 1] + B[p + w + 1];
+    const gy = -B[p - w - 1] - 2 * B[p - w] - B[p - w + 1] + B[p + w - 1] + 2 * B[p + w] + B[p + w + 1];
+    mag[p] = Math.hypot(gx, gy);
+    let a = Math.atan2(gy, gx) * 180 / Math.PI; if (a < 0) a += 180;
+    dir[p] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
+  }
+  const off = [[-1, 1], [-w - 1, w + 1], [-w, w], [-w + 1, w - 1]];
+  const sample = [];
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const p = y * w + x, m = mag[p], o = off[dir[p]];
+    if (m > 4 && m >= mag[p + o[0]] && m >= mag[p + o[1]]) { nms[p] = m; if ((p & 7) === 0) sample.push(m); }
+  }
+  sample.sort((a, b) => a - b);
+  const edges = { id, w, h, S, nms, sample };
+  if (mid / n < 0.12) {
+    // Flat-colour artwork (cartoons, coloured-in drawings): few in-between
+    // tones, so nearly every edge is real. Keep its drawn dark lines as they
+    // are (a solid dark area becomes just its outline), and add colour
+    // boundaries only where no drawn line already separates the shapes.
+    cur = null;
+    const r = lineRadius(S);
+    const dark = new Uint8Array(n);
+    for (let p = 0; p < n; p++) if (v[p] < 0.5) dark[p] = 255;
+    const thick = erode(dark, w, h, 2 * r), nearInk = dilate(dark, w, h, 2 * r + 3);
+    const lines = edgeLines(edges, 0.6);
+    for (let p = 0; p < n; p++) {
+      if (nearInk[p]) lines[p] = 0;
+      if (dark[p] && !thick[p]) lines[p] = 255;
+    }
+    removeSmall(lines, w, h, Math.max(10, Math.round(S * 0.015)));
+    return post(id, "flat", w, h, lines);
+  }
+  cur = edges;
+  post(id, "photo", w, h, edgeLines(cur, photoKeep(detail)));
+}
+
+// The detail slider (0..1) keeps the strongest 5%..35% of a photo's ridges.
+function photoKeep(detail) { return 0.05 + 0.30 * Math.min(1, Math.max(0, +detail || 0)); }
+
+// Keep the strongest `keep` fraction of ridges as edges, extend them along
+// weaker ridges (hysteresis), drop short scraps and thicken.
+function edgeLines(c, keep) {
+  const { w, h, S, nms, sample } = c, n = w * h, out = new Uint8Array(n);
+  if (!sample.length) return out;
+  const hi = sample[Math.min(sample.length - 1, Math.floor(sample.length * (1 - keep)))], lo = hi * 0.4;
+  const stack = new Int32Array(n);
+  let sp = 0;
+  for (let p = 0; p < n; p++) if (nms[p] >= hi) { out[p] = 255; stack[sp++] = p; }
+  while (sp) {
+    const q = stack[--sp], x = q % w, y = (q - x) / w;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy;
+      if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const r = yy * w + xx;
+      if (!out[r] && nms[r] >= lo) { out[r] = 255; stack[sp++] = r; }
+    }
+  }
+  removeSmall(out, w, h, Math.max(10, Math.round(S * 0.015)));
+  return dilate(out, w, h, lineRadius(S));
+}
+
+function lineRadius(S) { return Math.max(1, Math.round(S / 450)); }
+
+// Zero out 8-connected blobs smaller than `min` pixels.
+function removeSmall(a, w, h, min) {
+  if (min < 2) return;
+  const n = w * h, seen = new Uint8Array(n), stack = new Int32Array(n), comp = new Int32Array(n);
+  for (let s = 0; s < n; s++) {
+    if (!a[s] || seen[s]) continue;
+    let sp = 0, cn = 0;
+    stack[sp++] = s; seen[s] = 1;
+    while (sp) {
+      const q = stack[--sp], x = q % w, y = (q - x) / w;
+      comp[cn++] = q;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+        const r = yy * w + xx;
+        if (a[r] && !seen[r]) { seen[r] = 1; stack[sp++] = r; }
+      }
+    }
+    if (cn < min) for (let i = 0; i < cn; i++) a[comp[i]] = 0;
+  }
+}
+
+function erode(a, w, h, r) {
+  const inv = new Uint8Array(a.length);
+  for (let i = 0; i < a.length; i++) inv[i] = a[i] ? 0 : 255;
+  const d = dilate(inv, w, h, r);
+  for (let i = 0; i < a.length; i++) d[i] = d[i] ? 0 : 255;
+  return d;
+}
+
+// Binary dilation with a (2r+1)-square, as two running-count passes.
+function dilate(a, w, h, r) {
+  if (r < 1) return a;
+  const t = new Uint8Array(a.length), o = new Uint8Array(a.length);
+  for (let y = 0; y < h; y++) {
+    const row = y * w; let c = 0;
+    for (let x = 0; x <= Math.min(r, w - 1); x++) if (a[row + x]) c++;
+    for (let x = 0; x < w; x++) {
+      if (c) t[row + x] = 255;
+      if (x + r + 1 < w && a[row + x + r + 1]) c++;
+      if (x - r >= 0 && a[row + x - r]) c--;
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let c = 0;
+    for (let y = 0; y <= Math.min(r, h - 1); y++) if (t[y * w + x]) c++;
+    for (let y = 0; y < h; y++) {
+      if (c) o[y * w + x] = 255;
+      if (y + r + 1 < h && t[(y + r + 1) * w + x]) c++;
+      if (y - r >= 0 && t[(y - r) * w + x]) c--;
+    }
+  }
+  return o;
+}
+
+function maxFilter(a, w, h, r) {
+  const t = new Float32Array(a.length), o = new Float32Array(a.length);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let m = 0;
+    for (let k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k++) if (a[y * w + k] > m) m = a[y * w + k];
+    t[y * w + x] = m;
+  }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let m = 0;
+    for (let k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k++) if (t[k * w + x] > m) m = t[k * w + x];
+    o[y * w + x] = m;
+  }
+  return o;
+}
+
+function boxBlur(a, w, h, r) {
+  const t = new Float32Array(a.length), o = new Float32Array(a.length), d = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w; let s = 0;
+    for (let x = -r; x <= r; x++) s += a[row + Math.min(w - 1, Math.max(0, x))];
+    for (let x = 0; x < w; x++) {
+      t[row + x] = s / d;
+      s += a[row + Math.min(w - 1, x + r + 1)] - a[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += t[Math.min(h - 1, Math.max(0, y)) * w + x];
+    for (let y = 0; y < h; y++) {
+      o[y * w + x] = s / d;
+      s += t[Math.min(h - 1, y + r + 1) * w + x] - t[Math.max(0, y - r) * w + x];
+    }
+  }
+  return o;
+}
+</script>
 <script>
 (() => {
   const COLORS = [
@@ -291,7 +524,9 @@
     W: 0, H: 0, drawing: false, last: null, undo: [],
     lay: null, // { lines, size } for a name, or { img, size } for a picture (size = cover scale)
     src: null,
-    restore: null // snapshot of a picture cleared with Clear, for Undo
+    restore: null, // snapshot of a picture cleared with Clear, for Undo
+    regions: null, // { labels } of the closed shapes in a picture's lines, for stay-inside
+    maskRegion: -1 // which region `mask` currently holds
   };
 
   // ---------- UI ----------
@@ -470,21 +705,31 @@
     fitBoard();
   }
   // Picture mode: the photo replaces the name and fills the board (cover fit).
+  // The photo shows straight away; its coloring-page lines follow from the worker.
   function usePicture(img) {
     const { W, H } = canvasSize();
-    setCanvases(W, H, coverLay(img, W, H));
+    setCanvases(W, H, pictureLay({ img, id: ++picSeq, art: null, kind: null, view: "photo" }, W, H));
     state.undo = [];
     state.src = null;
     state.restore = null;
     syncMode();
     fitBoard();
+    makeLines(state.lay);
   }
-  function coverLay(img, W, H) {
-    return { img, size: Math.max(W / img.width, H / img.height) };
+  // A picture layout: the photo and its lines (`art`), cover-fitted at `size`.
+  function pictureLay(base, W, H) {
+    return { ...base, size: Math.max(W / base.img.width, H / base.img.height) };
   }
   function syncMode() {
-    // Nothing to stay inside of when coloring a picture.
-    insideBtn.disabled = !!state.lay.img;
+    const lay = state.lay, pic = !!lay.img, lines = pic && lay.view === "lines" && !!lay.art;
+    // Stay-inside needs shapes: letters, or a picture's lines.
+    insideBtn.disabled = pic && !lines;
+    picTools.hidden = !pic;
+    viewLines.setAttribute("aria-pressed", lines);
+    viewPhoto.setAttribute("aria-pressed", pic && !lines);
+    viewLines.disabled = pic && !lay.art;
+    picBusy.hidden = !pic || !!lay.art || lay.failed;
+    detailWrap.hidden = !(lines && lay.kind === "photo");
   }
   function canvasSize() {
     const r = stage.getBoundingClientRect();
@@ -495,13 +740,26 @@
     return { W, H };
   }
   function setCanvases(W, H, lay) {
-    state.W = W; state.H = H; state.lay = lay;
+    state.W = W; state.H = H;
     for (const c of [bg, paint, outline, mask, scratch]) { c.width = W; c.height = H; } // resizing clears them
+    drawLayers(lay);
+  }
+  // Draw everything except the paint, which is left untouched.
+  function drawLayers(lay) {
+    const W = state.W, H = state.H;
+    state.lay = lay; state.regions = null; state.maskRegion = -1;
+    for (const x of [bctx, octx, mctx]) x.clearRect(0, 0, W, H);
     if (lay.img) {
-      const w = lay.img.width * lay.size, h = lay.img.height * lay.size;
-      bctx.imageSmoothingQuality = "high";
-      bctx.drawImage(lay.img, (W - w) / 2, (H - h) / 2, w, h);
-      mctx.fillRect(0, 0, W, H); // whole board is paintable
+      const w = lay.img.width * lay.size, h = lay.img.height * lay.size, x0 = (W - w) / 2, y0 = (H - h) / 2;
+      if (lay.view === "lines" && lay.art) {
+        octx.imageSmoothingQuality = "high";
+        octx.drawImage(lay.art, x0, y0, w, h);
+        state.regions = findRegions();
+      } else {
+        bctx.imageSmoothingQuality = "high";
+        bctx.drawImage(lay.img, x0, y0, w, h);
+      }
+      mctx.fillRect(0, 0, W, H); // whole board paintable until a stroke picks a region
     } else {
       drawText(mctx, lay, W, H, "mask");
       drawText(octx, lay, W, H, "outline");
@@ -523,7 +781,7 @@
     const src = state.src;
     // Once painted, keep the same line breaks so the paint still lines up.
     const painted = src.undo.length > 0;
-    const lay = src.lay.img ? coverLay(src.lay.img, W, H)
+    const lay = src.lay.img ? pictureLay(src.lay, W, H)
       : painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
     applySnapshot(src, W, H, lay);
   }
@@ -624,7 +882,7 @@
       state.restore = null;
       state.src = null;
       const { W, H } = canvasSize();
-      applySnapshot(r, W, H, coverLay(r.lay.img, W, H));
+      applySnapshot(r, W, H, pictureLay(r.lay, W, H));
       syncMode();
       return;
     }
@@ -639,6 +897,7 @@
     pushUndo();
     state.drawing = true;
     state.last = toCanvas(e);
+    if (state.regions && state.tool === "brush") regionMask(state.last);
     if (state.tool === "stamp") stamp(state.last);
     else segment(state.last, state.last);
   });
@@ -661,6 +920,141 @@
     document.getElementById("nameInput").blur();
     generate(document.getElementById("nameInput").value);
   });
+  // ---------- Picture -> coloring page ----------
+  const picTools = document.getElementById("picTools");
+  const viewLines = document.getElementById("viewLines");
+  const viewPhoto = document.getElementById("viewPhoto");
+  const detailWrap = document.getElementById("detailWrap");
+  const detailInput = document.getElementById("detail");
+  const picBusy = document.getElementById("picBusy");
+  const LINE_RGB = [0x3b, 0x33, 0x55]; // same ink as the name outlines
+  let picSeq = 0, worker = null;
+
+  function getWorker() {
+    if (worker) return worker;
+    const src = document.getElementById("convWorkerSrc").textContent;
+    worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    worker.onmessage = e => {
+      const m = e.data, lay = state.lay;
+      if (!lay || !lay.img || lay.id !== m.id) return; // a newer picture (or a name) took over
+      const art = document.createElement("canvas");
+      art.width = m.w; art.height = m.h;
+      const ax = art.getContext("2d"), id = ax.createImageData(m.w, m.h), d = id.data;
+      for (let p = 0, i = 0; p < m.lines.length; p++, i += 4) {
+        d[i] = LINE_RGB[0]; d[i + 1] = LINE_RGB[1]; d[i + 2] = LINE_RGB[2]; d[i + 3] = m.lines[p];
+      }
+      ax.putImageData(id, 0, 0);
+      state.src = null;
+      drawLayers({ ...lay, art, kind: m.kind, view: lay.art ? lay.view : "lines" });
+      syncMode();
+    };
+    worker.onerror = () => {
+      if (state.lay && state.lay.img) { state.lay.failed = true; syncMode(); }
+      say("Couldn't make lines from that picture.");
+    };
+    return worker;
+  }
+  // Send the picture (at most 1000px) to the worker to find its lines.
+  function makeLines(lay) {
+    const k = Math.min(1, 1000 / Math.max(lay.img.width, lay.img.height));
+    const w = Math.max(1, Math.round(lay.img.width * k)), h = Math.max(1, Math.round(lay.img.height * k));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const x = c.getContext("2d");
+    x.drawImage(lay.img, 0, 0, w, h);
+    const data = x.getImageData(0, 0, w, h).data.buffer;
+    try {
+      getWorker().postMessage({ id: lay.id, w, h, data, detail: +detailInput.value }, [data]);
+    } catch (err) {
+      lay.failed = true; syncMode();
+    }
+  }
+  viewLines.onclick = () => { if (state.lay.art) { state.src = null; drawLayers({ ...state.lay, view: "lines" }); syncMode(); } };
+  viewPhoto.onclick = () => { state.src = null; drawLayers({ ...state.lay, view: "photo" }); syncMode(); };
+  let detailTimer;
+  detailInput.addEventListener("input", () => {
+    clearTimeout(detailTimer);
+    detailTimer = setTimeout(() => { if (state.lay.img) makeLines(state.lay); }, 200);
+  });
+
+  // Closed shapes between the picture's lines, so "stay inside" can keep the
+  // brush in the shape where a stroke starts. Lines are thickened by 2px first
+  // so small gaps don't join neighbouring shapes.
+  function findRegions() {
+    const W = state.W, H = state.H, n = W * H, d = octx.getImageData(0, 0, W, H).data;
+    let wall = new Uint8Array(n);
+    for (let p = 0; p < n; p++) if (d[p * 4 + 3] > 60) wall[p] = 1;
+    wall = dilateBin(wall, W, H, 2);
+    const labels = new Int32Array(n).fill(-1), stack = new Int32Array(n), boxes = [];
+    let next = 0;
+    for (let s = 0; s < n; s++) {
+      if (wall[s] || labels[s] >= 0) continue;
+      let sp = 0, x0 = W, y0 = H, x1 = 0, y1 = 0;
+      stack[sp++] = s; labels[s] = next;
+      while (sp) {
+        const q = stack[--sp], x = q % W, y = (q - x) / W;
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (x > 0 && !wall[q - 1] && labels[q - 1] < 0) { labels[q - 1] = next; stack[sp++] = q - 1; }
+        if (x < W - 1 && !wall[q + 1] && labels[q + 1] < 0) { labels[q + 1] = next; stack[sp++] = q + 1; }
+        if (q >= W && !wall[q - W] && labels[q - W] < 0) { labels[q - W] = next; stack[sp++] = q - W; }
+        if (q < n - W && !wall[q + W] && labels[q + W] < 0) { labels[q + W] = next; stack[sp++] = q + W; }
+      }
+      boxes.push([x0, y0, x1, y1]);
+      next++;
+    }
+    return { labels, boxes };
+  }
+  // Point `mask` at the shape under p (grown a little so paint reaches under the line).
+  function regionMask(p) {
+    const W = state.W, H = state.H, labels = state.regions.labels;
+    let lab = -1;
+    for (let r = 0; r <= 10 && lab < 0; r++) {
+      for (let dy = -r; dy <= r && lab < 0; dy++) for (let dx = -r; dx <= r; dx++) {
+        const x = Math.round(p.x) + dx, y = Math.round(p.y) + dy;
+        if (x >= 0 && y >= 0 && x < W && y < H && labels[y * W + x] >= 0) { lab = labels[y * W + x]; break; }
+      }
+    }
+    if (lab === state.maskRegion) return;
+    state.maskRegion = lab;
+    if (lab < 0) { mctx.fillRect(0, 0, W, H); return; } // on a thick line: paint freely
+    // Only work inside the shape's bounding box (plus the growth margin).
+    const G = 4, b = state.regions.boxes[lab];
+    const bx = Math.max(0, b[0] - G), by = Math.max(0, b[1] - G);
+    const bw = Math.min(W - 1, b[2] + G) - bx + 1, bh = Math.min(H - 1, b[3] + G) - by + 1;
+    let m = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++) {
+      const row = (by + y) * W + bx;
+      for (let x = 0; x < bw; x++) if (labels[row + x] === lab) m[y * bw + x] = 1;
+    }
+    m = dilateBin(m, bw, bh, G);
+    const id = mctx.createImageData(bw, bh), d = id.data;
+    for (let i = 0; i < m.length; i++) if (m[i]) d[i * 4 + 3] = 255;
+    mctx.clearRect(0, 0, W, H);
+    mctx.putImageData(id, bx, by);
+  }
+  function dilateBin(a, w, h, r) {
+    const t = new Uint8Array(a.length), o = new Uint8Array(a.length);
+    for (let y = 0; y < h; y++) {
+      const row = y * w; let c = 0;
+      for (let x = 0; x <= Math.min(r, w - 1); x++) if (a[row + x]) c++;
+      for (let x = 0; x < w; x++) {
+        if (c) t[row + x] = 1;
+        if (x + r + 1 < w && a[row + x + r + 1]) c++;
+        if (x - r >= 0 && a[row + x - r]) c--;
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let c = 0;
+      for (let y = 0; y <= Math.min(r, h - 1); y++) if (t[y * w + x]) c++;
+      for (let y = 0; y < h; y++) {
+        if (c) o[y * w + x] = 1;
+        if (y + r + 1 < h && t[(y + r + 1) * w + x]) c++;
+        if (y - r >= 0 && t[(y - r) * w + x]) c--;
+      }
+    }
+    return o;
+  }
+
   const photoInput = document.getElementById("photoInput");
   document.getElementById("photoBtn").onclick = () => photoInput.click();
   photoInput.addEventListener("change", async () => {
