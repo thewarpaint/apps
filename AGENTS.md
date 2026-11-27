@@ -39,8 +39,10 @@ Never rename a storage key without migrating the data, or users lose it.
 - **Toolbar:**
   - The top row holds brush sizes, eraser, stickers and the stay-inside toggle.
   - Below it, the palette and the undo/clear/save group share one row, centred vertically.
-  - At 720px wide or less, the palette is two rows of six. At 480px or less, swatches and action buttons shrink so that row still fits.
-- **Sticker panel:** it's anchored to `#tools` (`position: relative`) so it stays on screen.
+  - At 720px wide or less, the palette is two rows of six. At 480px or less, swatches and action buttons shrink so that row still fits. At 350px or less, gaps tighten too.
+  - On landscape phones (`orientation: landscape` and `max-height: 500px`), the body becomes a grid with `#tools` set to `display: contents`. `#toolGroup` becomes a column on the left, and `.tool-row` (a 2-column palette over the actions) a column on the right. The sticker panel then anchors to `#toolGroup` and opens to its right.
+- **Board resize:** when the stage's aspect ratio changes by more than 15% (for example, the phone rotates), `relayout()` re-fits the name and scales the paint and undo snapshots about the centre by the text-size ratio. Once painted, it keeps the same line breaks. It always re-maps from `state.src`, the last canvas the user drew on, so rotating back restores anything clipped and repeated rotations don't add blur. Any edit (`pushUndo`, `undo`, `generate`) resets `state.src`.
+- **Sticker panel:** in portrait it's anchored to `#tools` (`position: relative`) so it stays on screen. In landscape it anchors to `#toolGroup`.
 - **Sticker button:** it cycles stickers every 5s until the sticker tool is active, then shows the chosen sticker.
 - **Zoom is blocked on purpose:** gesture events, multi-touch moves, `dblclick` and ctrl+wheel are all cancelled, and `touch-action: manipulation` is set. Keyboard zoom still works.
 
