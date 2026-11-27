@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Smoking Log</title>
+<meta name="theme-color" content="#1e2b37">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Smoking">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
 /* VOICE: plain, non-judgmental utility
    IDEA: a wall calendar you mark with a red dot
@@ -204,6 +212,12 @@ function render(){paintForm();stats();cal()}
 /* keep "today" correct if the page stays open past midnight */
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(sel>today())sel=today();render()}});
 render();
+}
+</script>
+<script>
+// Offline support: one service worker for the whole site (see sw.js).
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("../sw.js").catch(e => console.warn("SW registration failed", e)));
 }
 </script>
 </body>

@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Apps</title>
+<meta name="theme-color" content="#1e2b37">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Apps">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
 :root{color-scheme:dark;--bg:#1e2b37;--card:#2c3e50;--card2:#34495e;--ink:#ecf0f1;--mute:#95a5a6;--turq:#1abc9c;--blue:#3498db}
 *{box-sizing:border-box}
@@ -27,5 +35,11 @@ span{font-size:14px;color:var(--mute)}
     <li><a href="coloring/"><b>Name coloring book</b><span>Type a name and color it in, with stickers.</span></a></li>
   </ul>
 </main>
+<script>
+// Offline support: one service worker for the whole site (see sw.js).
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(e => console.warn("SW registration failed", e)));
+}
+</script>
 </body>
 </html>

@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Smoking Log",
+  "short_name": "Smoking",
+  "description": "Log cigarettes per day and track smoke-free streaks.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "lang": "en",
+  "background_color": "#1e2b37",
+  "theme_color": "#1e2b37",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "Color My Name",
+  "short_name": "Coloring",
+  "description": "Type a name and color it in, with stickers.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "lang": "en",
+  "background_color": "#f6f1fb",
+  "theme_color": "#f6f1fb",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
