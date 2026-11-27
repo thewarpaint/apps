@@ -101,7 +101,16 @@
   .icon svg { width: 22px; height: 22px; }
   .sub { display: flex; gap: 4px; }
   .sep { width: 2px; height: 26px; background: var(--line); border-radius: 2px; margin: 0 2px; }
-  #stickerBtn .cur { font-size: 22px; line-height: 1; }
+  #stickerBtn .cur { display: inline-block; font-size: 22px; line-height: 1; }
+  #stickerBtn .cur.pop { animation: stickerPop .35s ease-out; }
+  @keyframes stickerPop { from { transform: scale(.3) rotate(-20deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  /* Stay-inside icon: color clipped to the circle when on, spilling out when off */
+  #insideBtn { --brush: #ffadad; }
+  #insideBtn .scrib { stroke: var(--brush); }
+  #insideBtn .spill { display: none; }
+  #insideBtn:not(.on) .spill { display: inline; }
+  #insideBtn:not(.on) .clipped { display: none; }
+  @media (prefers-reduced-motion: reduce) { #stickerBtn .cur.pop { animation: none; } }
   #stickerPanel {
     position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
     width: max-content; max-width: calc(100vw - 16px);
@@ -155,7 +164,12 @@
       <div id="stickerPanel" role="listbox" aria-label="Pick a sticker"></div>
     </div>
     <button class="tool icon on" id="insideBtn" aria-label="Stay inside the letters" title="Stay inside the letters" aria-pressed="true">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"><path d="M4 20L12 3l8 17" /><path d="M7.5 13h9"/><circle cx="12" cy="10" r="1.6" fill="#a0c4ff" stroke="none"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke-linecap="round">
+        <defs><clipPath id="insideClip"><circle cx="12" cy="12" r="8"/></clipPath></defs>
+        <path class="scrib clipped" clip-path="url(#insideClip)" stroke-width="3" d="M2 10L10 2M2 16L16 2M3 21L21 3M8 22L22 8M14 22L22 14"/>
+        <path class="scrib spill" stroke-width="3" d="M2 10L10 2M2 16L16 2M3 21L21 3M8 22L22 8M14 22L22 14"/>
+        <circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="2"/>
+      </svg>
     </button>
   </div>
   <div class="tool-row">
@@ -263,6 +277,19 @@
   document.addEventListener("pointerdown", e => {
     if (!e.target.closest(".sticker-wrap")) closeStickers();
   });
+  // Until the sticker tool is in use, cycle the button's sticker to hint at the choices.
+  let cycleIdx = 0;
+  const curSticker = stickerBtn.querySelector(".cur");
+  function showSticker(s) {
+    if (curSticker.textContent === s) return;
+    curSticker.textContent = s;
+    curSticker.classList.remove("pop"); void curSticker.offsetWidth; curSticker.classList.add("pop");
+  }
+  setInterval(() => {
+    if (state.tool === "stamp" || stickerPanel.classList.contains("open") || document.hidden) return;
+    cycleIdx = (cycleIdx + 1) % STICKERS.length;
+    showSticker(STICKERS[cycleIdx]);
+  }, 5000);
   const insideBtn = document.getElementById("insideBtn");
   insideBtn.onclick = () => {
     state.inside = !state.inside;
@@ -277,7 +304,8 @@
       b.classList.toggle("on", state.tool === "brush" && b.dataset.color === state.color));
     eraserBtn.classList.toggle("on", state.tool === "eraser");
     stickerBtn.classList.toggle("on", state.tool === "stamp");
-    stickerBtn.querySelector(".cur").textContent = state.sticker;
+    showSticker(state.tool === "stamp" ? state.sticker : STICKERS[cycleIdx]);
+    insideBtn.style.setProperty("--brush", state.color);
     stickerPanel.querySelectorAll("button").forEach(b =>
       b.classList.toggle("on", b.dataset.sticker === state.sticker));
     sizes.querySelectorAll(".size").forEach((b, i) => {
