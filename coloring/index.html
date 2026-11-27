@@ -290,7 +290,8 @@
     color: COLORS[0], tool: "brush", sticker: STICKERS[0], sizeIdx: 1, inside: true,
     W: 0, H: 0, drawing: false, last: null, undo: [],
     lay: null, // { lines, size } for a name, or { img, size } for a picture (size = cover scale)
-    src: null
+    src: null,
+    restore: null // snapshot of a picture cleared with Clear, for Undo
   };
 
   // ---------- UI ----------
@@ -367,7 +368,18 @@
     insideBtn.setAttribute("aria-pressed", state.inside);
   };
   document.getElementById("undoBtn").onclick = undo;
-  document.getElementById("clearBtn").onclick = () => { pushUndo(); pctx.clearRect(0, 0, state.W, state.H); };
+  document.getElementById("clearBtn").onclick = async () => {
+    if (state.lay && state.lay.img) {
+      // Clearing a picture removes the picture too and goes back to the name.
+      // Keep a snapshot so Undo can bring the picture and its coloring back.
+      const snap = snapshot();
+      await generate(state.name);
+      state.restore = snap;
+      return;
+    }
+    pushUndo();
+    pctx.clearRect(0, 0, state.W, state.H);
+  };
 
   function syncUI() {
     palette.querySelectorAll(".swatch").forEach(b =>
@@ -453,6 +465,7 @@
     state.name = name;
     state.undo = [];
     state.src = null;
+    state.restore = null;
     syncMode();
     fitBoard();
   }
@@ -462,6 +475,7 @@
     setCanvases(W, H, coverLay(img, W, H));
     state.undo = [];
     state.src = null;
+    state.restore = null;
     syncMode();
     fitBoard();
   }
@@ -505,17 +519,23 @@
     // Always re-map from the last layout the child actually drew on, so
     // rotating back and forth never loses paint that fell off the edge of a
     // narrower shape, and doesn't blur it with repeated resampling.
-    if (!state.src) {
-      const c = document.createElement("canvas");
-      c.width = state.W; c.height = state.H;
-      c.getContext("2d").drawImage(paint, 0, 0);
-      state.src = { canvas: c, undo: state.undo.slice(), lay: state.lay, W: state.W, H: state.H };
-    }
+    if (!state.src) state.src = snapshot();
     const src = state.src;
     // Once painted, keep the same line breaks so the paint still lines up.
     const painted = src.undo.length > 0;
     const lay = src.lay.img ? coverLay(src.lay.img, W, H)
       : painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
+    applySnapshot(src, W, H, lay);
+  }
+  function snapshot() {
+    const c = document.createElement("canvas");
+    c.width = state.W; c.height = state.H;
+    c.getContext("2d").drawImage(paint, 0, 0);
+    return { canvas: c, undo: state.undo.slice(), lay: state.lay, W: state.W, H: state.H };
+  }
+  // Lay out `lay` at W×H and bring a snapshot's paint and undo history across,
+  // scaled about the centre by the ratio of the two layouts' sizes.
+  function applySnapshot(src, W, H, lay) {
     const s = lay.size / src.lay.size, oW = src.W, oH = src.H;
     const remap = from => {
       const c = document.createElement("canvas");
@@ -597,7 +617,17 @@
   }
   function undo() {
     const c = state.undo.pop();
-    if (!c) return;
+    if (!c) {
+      // Nothing left to undo since a picture was cleared: bring it back.
+      const r = state.restore;
+      if (!r) return;
+      state.restore = null;
+      state.src = null;
+      const { W, H } = canvasSize();
+      applySnapshot(r, W, H, coverLay(r.lay.img, W, H));
+      syncMode();
+      return;
+    }
     state.src = null;
     pctx.clearRect(0, 0, state.W, state.H);
     pctx.drawImage(c, 0, 0);
