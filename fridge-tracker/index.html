@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fridge Tracker</title>
+<style>
+/* VOICE: quiet utility, flat and calm
+   IDEA: a fridge door list — items sorted by what to eat first
+   PICTURE: the live list itself, under a slim add form
+   COLOUR/TYPE: Flat UI — midnight blue ground, wet asphalt cards, turquoise action, alizarin for spoiled; system sans
+   LAYOUT: one column, max 640px, add form on top, list below, edit in a bottom sheet */
+:root{color-scheme:dark;
+  --bg:#1e2b37;--card:#2c3e50;--card2:#34495e;--ink:#ecf0f1;--mute:#95a5a6;
+  --turq:#1abc9c;--turq2:#16a085;--red:#e74c3c;--red2:#c0392b;--orange:#e67e22;--blue:#3498db}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:clip}
+main{max-width:640px;margin:0 auto;padding:20px 16px 96px}
+h1{font-size:28px;line-height:1.1;margin:4px 0 16px;font-weight:700}
+h1 small{display:block;font-size:14px;font-weight:400;color:var(--mute);margin-top:6px}
+button,input{font:inherit;color:inherit}
+button{border:0;cursor:pointer;min-height:44px;border-radius:4px;padding:0 16px;background:var(--card2)}
+button:focus-visible,input:focus-visible,label.photo:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+.primary{background:var(--turq);color:#fff;font-weight:600}.primary:active{background:var(--turq2)}
+.form{background:var(--card);border-radius:6px;padding:14px;display:grid;gap:12px}
+.text{width:100%;height:48px;border:0;border-radius:4px;background:var(--card2);padding:0 12px;font-size:16px}
+.text::placeholder{color:var(--mute)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.photo{position:relative;width:64px;height:64px;flex:none;border-radius:4px;background:var(--card2);display:grid;place-items:center;overflow:hidden;cursor:pointer;color:var(--mute)}
+.photo input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.photo img{width:100%;height:100%;object-fit:cover}
+.photo .x{position:absolute;top:2px;right:2px;min-height:0;width:22px;height:22px;padding:0;border-radius:50%;background:rgba(0,0,0,.6);font-size:13px;line-height:22px;z-index:2}
+.date{display:flex;align-items:center;gap:6px;flex:1}
+.date .step{width:44px;padding:0;font-size:22px;font-weight:600}
+.date .val{flex:1;text-align:center;line-height:1.2}
+.date .val b{display:block;font-size:16px}.date .val span{font-size:13px;color:var(--mute)}
+.date.off .step,.date .step:disabled{opacity:.35;cursor:default}
+.toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--mute);cursor:pointer;min-height:44px}
+.toggle input{width:20px;height:20px;accent-color:var(--turq)}
+.bar{display:flex;justify-content:space-between;align-items:baseline;margin:24px 0 8px;color:var(--mute);font-size:14px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:6px;padding:10px;border-left:4px solid var(--turq)}
+li.soon{border-left-color:var(--orange)}
+li.bad{background:var(--red2);border-left-color:var(--red)}
+li.none{border-left-color:var(--mute)}
+.thumb{width:52px;height:52px;flex:none;border-radius:4px;background:var(--card2);object-fit:cover;display:grid;place-items:center;color:var(--mute);font-weight:700;font-size:20px}
+li.bad .thumb{background:rgba(0,0,0,.2);color:#fff}
+.info{flex:1}
+.name{font-weight:600;overflow-wrap:anywhere}
+.when{font-size:14px;color:var(--mute)}
+li.bad .when{color:#fdd}li.soon .when{color:var(--orange)}
+.acts{display:flex;gap:6px;flex:none}
+.icon{width:44px;padding:0;display:grid;place-items:center}
+li.bad .icon{background:rgba(0,0,0,.2)}
+.icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.empty{text-align:center;color:var(--mute);padding:40px 16px;background:var(--card);border-radius:6px}
+.sheet{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:10}
+.sheet.open{display:flex}
+.sheet .form{width:100%;max-width:640px;border-radius:8px 8px 0 0;padding:18px 16px 24px}
+.sheet h2{margin:0;font-size:20px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(120px);background:var(--card2);border-radius:6px;padding:6px 6px 6px 16px;display:flex;gap:12px;align-items:center;transition:transform .2s;z-index:20;max-width:calc(100% - 32px)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast button{background:none;color:var(--turq);font-weight:600}
+.warn{font-size:13px;color:var(--orange)}
+button.thumb{padding:0;min-height:0;overflow:hidden;cursor:zoom-in}
+button.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;z-index:30;cursor:zoom-out}
+.viewer.open{display:flex}
+.viewer img{max-width:100%;max-height:calc(100vh - 120px);border-radius:6px;object-fit:contain}
+.viewer p{margin:0;font-weight:600;text-align:center;overflow-wrap:anywhere}
+.viewer .close{position:absolute;top:12px;right:12px;width:44px;padding:0;font-size:24px;background:var(--card2)}
+@media(prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Fridge<small>Eat what's oldest first.</small></h1>
+
+  <form class="form" id="addForm" autocomplete="off">
+    <input class="text" id="addName" placeholder="Item name, e.g. Leftover curry" maxlength="80" required>
+    <div class="row" id="addRow"></div>
+    <button class="primary" type="submit">Add to fridge</button>
+  </form>
+
+  <div class="bar"><span id="count"></span><span id="stat"></span></div>
+  <ul id="list"></ul>
+  <p class="warn" id="storeWarn" hidden>Storage is unavailable here, so items won't be kept after you close the page.</p>
+</main>
+
+<div class="sheet" id="sheet">
+  <form class="form" id="editForm" autocomplete="off">
+    <h2>Update item</h2>
+    <input class="text" id="editName" maxlength="80" required>
+    <div class="row" id="editRow"></div>
+    <div class="row"><button type="button" id="cancel" style="flex:1">Cancel</button><button class="primary" type="submit" style="flex:1">Save</button></div>
+  </form>
+</div>
+
+<div class="viewer" id="viewer" role="dialog" aria-modal="true" aria-label="Photo">
+  <button type="button" class="close" id="viewClose" aria-label="Close photo">×</button>
+  <img id="viewImg" alt=""><p id="viewName"></p>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button type="button" id="undo">Undo</button></div>
+
+<script>
+{
+const KEY='fridge.items.v1';
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ICON={
+  edit:'<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>',
+  del:'<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  cam:'<svg viewBox="0 0 24 24" style="width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2"><path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>'
+};
+
+/* ---- dates (local, YYYY-MM-DD) ---- */
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const today=()=>iso(new Date());
+const shift=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return iso(d)};
+const diff=s=>Math.round((parse(s)-parse(today()))/864e5);
+const fmt=s=>parse(s).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:parse(s).getFullYear()===new Date().getFullYear()?undefined:'numeric'});
+const rel=s=>{const n=diff(s);if(n===0)return'today';if(n===1)return'tomorrow';if(n===-1)return'yesterday';return n>0?`in ${n} days`:`${-n} days ago`};
+
+/* ---- storage ---- */
+let items=[],canStore=true;
+try{items=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(items))items=[]}catch(e){canStore=false}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(items));return true}catch(e){canStore=false;$('storeWarn').hidden=false;return false}};
+if(!canStore)$('storeWarn').hidden=false;
+
+/* ---- reusable photo + date controls ---- */
+function controls(row){
+  const st={photo:null,date:today(),noDate:false};
+  row.innerHTML=`<label class="photo" title="Add photo"><span class="ph">${ICON.cam}</span><input type="file" accept="image/*" aria-label="Photo (optional)"></label>
+    <div class="date"><button type="button" class="step" data-n="-1" aria-label="One day earlier">−</button>
+      <div class="val" aria-live="polite"><b></b><span></span></div>
+      <button type="button" class="step" data-n="1" aria-label="One day later">+</button></div>
+    <label class="toggle"><input type="checkbox"> No date</label>`;
+  const ph=row.querySelector('.photo'),file=ph.querySelector('input'),box=row.querySelector('.date'),
+        chk=row.querySelector('.toggle input'),b=box.querySelector('b'),sp=box.querySelector('span');
+  const paint=()=>{
+    box.classList.toggle('off',st.noDate);
+    box.querySelector('[data-n="-1"]').disabled=st.noDate||diff(st.date)<=0;
+    b.textContent=st.noDate?'No expiry':fmt(st.date);
+    sp.textContent=st.noDate?'':'Expires '+rel(st.date);
+    chk.checked=st.noDate;
+    ph.querySelectorAll('img,.x').forEach(n=>n.remove());
+    ph.querySelector('.ph').hidden=!!st.photo;
+    if(st.photo){
+      ph.insertAdjacentHTML('afterbegin',`<img alt="">`);ph.querySelector('img').src=st.photo;
+      ph.insertAdjacentHTML('beforeend',`<button type="button" class="x" aria-label="Remove photo">×</button>`);
+    }
+  };
+  box.addEventListener('click',e=>{const n=e.target.closest('.step');if(n&&!n.disabled&&!st.noDate){st.date=shift(st.date,+n.dataset.n);paint()}});
+  chk.addEventListener('change',()=>{st.noDate=chk.checked;paint()});
+  ph.addEventListener('click',e=>{if(e.target.closest('.x')){e.preventDefault();st.photo=null;file.value='';paint()}});
+  file.addEventListener('change',async()=>{const f=file.files[0];if(f){st.photo=await shrink(f);paint()}});
+  return{st,paint,set(v){Object.assign(st,v);paint()},reset(){st.photo=null;st.date=today();st.noDate=false;file.value='';paint()}};
+}
+
+/* shrink photos so localStorage doesn't fill up */
+function shrink(f){
+  return new Promise(res=>{
+    const url=URL.createObjectURL(f),img=new Image();
+    img.onload=()=>{
+      const max=900,r=Math.min(1,max/Math.max(img.width,img.height));
+      const c=document.createElement('canvas');c.width=Math.round(img.width*r);c.height=Math.round(img.height*r);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
+      res(c.toDataURL('image/jpeg',.7));
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);res(null)};
+    img.src=url;
+  });
+}
+
+/* ---- render ---- */
+function sorted(){
+  return [...items].sort((a,b)=>{
+    if(!a.exp&&!b.exp)return b.added-a.added;
+    if(!a.exp)return 1;if(!b.exp)return-1;
+    return a.exp<b.exp?-1:a.exp>b.exp?1:a.added-b.added;
+  });
+}
+function render(){
+  const list=sorted(),bad=list.filter(i=>i.exp&&diff(i.exp)<0).length;
+  $('count').textContent=list.length?`${list.length} item${list.length>1?'s':''}`:'';
+  $('stat').textContent=bad?`${bad} gone bad`:'';
+  $('list').innerHTML=list.length?list.map(i=>{
+    const n=i.exp?diff(i.exp):null;
+    const cls=n===null?'none':n<0?'bad':n<=2?'soon':'';
+    const when=n===null?'No expiry date':n<0?`Expired ${rel(i.exp)} · ${fmt(i.exp)}`:`Expires ${rel(i.exp)} · ${fmt(i.exp)}`;
+    const th=i.photo?`<button class="thumb" data-view="${esc(i.id)}" aria-label="View photo of ${esc(i.name)}"><img alt="" src="${esc(i.photo)}"></button>`:`<div class="thumb" aria-hidden="true">${esc((i.name.trim()[0]||'?').toUpperCase())}</div>`;
+    return `<li class="${cls}">${th}<div class="info"><div class="name">${esc(i.name)}</div><div class="when">${esc(when)}</div></div>
+      <div class="acts"><button class="icon" data-edit="${esc(i.id)}" aria-label="Update ${esc(i.name)}">${ICON.edit}</button>
+      <button class="icon" data-del="${esc(i.id)}" aria-label="Remove ${esc(i.name)}">${ICON.del}</button></div></li>`;
+  }).join(''):`<div class="empty">Your fridge is empty. Add the first item above.</div>`;
+}
+
+/* ---- add ---- */
+const add=controls($('addRow'));add.paint();
+$('addForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const name=$('addName').value.trim();if(!name)return;
+  items.push({id:Date.now().toString(36)+Math.random().toString(36).slice(2,6),name,photo:add.st.photo,exp:add.st.noDate?null:add.st.date,added:Date.now()});
+  if(!save()&&add.st.photo)toast('Storage full — try without a photo',false);
+  $('addName').value='';add.reset();render();$('addName').focus();
+});
+
+/* ---- list actions ---- */
+let last=null,tt;
+function toast(msg,canUndo){
+  $('toastMsg').textContent=msg;$('undo').hidden=!canUndo;
+  $('toast').classList.add('show');clearTimeout(tt);tt=setTimeout(()=>$('toast').classList.remove('show'),4000);
+}
+$('list').addEventListener('click',e=>{
+  const d=e.target.closest('[data-del]'),u=e.target.closest('[data-edit]');
+  if(d){const i=items.findIndex(x=>x.id===d.dataset.del);if(i<0)return;last=items[i];items.splice(i,1);save();render();toast(`Removed ${last.name}`,true)}
+  if(u)openEdit(u.dataset.edit);
+  const v=e.target.closest('[data-view]');
+  if(v){const it=items.find(x=>x.id===v.dataset.view);if(it&&it.photo){
+    $('viewImg').src=it.photo;$('viewName').textContent=it.name;$('viewer').classList.add('open');$('viewClose').focus()}}
+});
+const closeView=()=>{$('viewer').classList.remove('open');$('viewImg').removeAttribute('src')};
+$('viewer').addEventListener('click',closeView);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('viewer').classList.contains('open'))closeView()});
+$('undo').addEventListener('click',()=>{if(last){items.push(last);last=null;save();render()}$('toast').classList.remove('show')});
+
+/* ---- edit ---- */
+const ed=controls($('editRow'));let editing=null;
+function openEdit(id){
+  const it=items.find(x=>x.id===id);if(!it)return;editing=it;
+  $('editName').value=it.name;
+  ed.set({photo:it.photo||null,date:it.exp||today(),noDate:!it.exp});
+  $('sheet').classList.add('open');$('editName').focus();
+}
+const close=()=>{$('sheet').classList.remove('open');editing=null};
+$('cancel').addEventListener('click',close);
+$('sheet').addEventListener('click',e=>{if(e.target===$('sheet'))close()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&editing)close()});
+$('editForm').addEventListener('submit',e=>{
+  e.preventDefault();if(!editing)return;
+  const name=$('editName').value.trim();if(!name)return;
+  Object.assign(editing,{name,photo:ed.st.photo,exp:ed.st.noDate?null:ed.st.date});
+  save();close();render();
+});
+
+/* refresh "in N days" labels when the day changes or the tab returns */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();add.paint()}});
+render();
+}
+</script>
+</body>
+</html>

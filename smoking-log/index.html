@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Smoking Log</title>
+<style>
+/* VOICE: plain, non-judgmental utility
+   IDEA: a wall calendar you mark with a red dot
+   PICTURE: the month grid itself, under a one-tap log form
+   COLOUR/TYPE: Flat UI — midnight blue ground, wet asphalt cards, turquoise action, alizarin marks; system sans
+   LAYOUT: one column, max 640px: log form, stats strip, calendar */
+:root{color-scheme:dark;
+  --bg:#1e2b37;--card:#2c3e50;--card2:#34495e;--ink:#ecf0f1;--mute:#95a5a6;
+  --turq:#1abc9c;--turq2:#16a085;--red:#e74c3c;--red2:#c0392b;--blue:#3498db}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:clip}
+main{max-width:640px;margin:0 auto;padding:20px 16px 96px;display:grid;gap:16px}
+h1{font-size:28px;line-height:1.1;margin:4px 0 0;font-weight:700}
+h2{font-size:18px;margin:0;font-weight:600}
+button{font:inherit;color:inherit;border:0;cursor:pointer;min-height:44px;border-radius:4px;padding:0 16px;background:var(--card2)}
+button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button:disabled{opacity:.35;cursor:default}
+.primary{background:var(--turq);color:#fff;font-weight:600}.primary:active{background:var(--turq2)}
+.card{background:var(--card);border-radius:6px;padding:14px}
+.form{display:grid;gap:12px}
+.date{display:flex;align-items:center;gap:8px}
+.step{width:48px;padding:0;font-size:24px;font-weight:600}
+.val{flex:1;text-align:center;line-height:1.25}
+.val b{display:block;font-size:18px}.val span{font-size:13px;color:var(--mute)}
+.day-note{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px;color:var(--mute);min-height:44px}
+.day-note button{background:none;color:var(--red);font-weight:600;padding:0 8px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.stat{background:var(--card);border-radius:6px;padding:12px 10px}
+.stat b{display:block;font-size:clamp(22px,6vw,30px);line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-size:13px;color:var(--mute)}
+.stat.good b{color:var(--turq)}
+@media(max-width:480px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.cal-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.cal-head h2{flex:1;text-align:center}
+.nav{width:44px;padding:0;font-size:20px}
+.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.wd{text-align:center;font-size:13px;color:var(--mute);padding-bottom:4px}
+.d{position:relative;aspect-ratio:1;min-height:0;padding:0;border-radius:4px;background:var(--card2);display:grid;place-items:center;font-variant-numeric:tabular-nums;font-size:15px}
+.d.blank{background:none;pointer-events:none}
+.d.future{opacity:.3;cursor:default}
+.d.s1{background:#a5342a}.d.s2{background:var(--red2)}.d.s3{background:var(--red)}
+.d.today{box-shadow:inset 0 0 0 2px var(--turq)}
+.d.sel{box-shadow:inset 0 0 0 2px var(--blue)}
+.d.today.sel{box-shadow:inset 0 0 0 2px var(--blue),inset 0 0 0 4px var(--turq)}
+.d i{position:absolute;bottom:3px;right:4px;font-style:normal;font-size:11px;font-weight:700;line-height:1}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--mute)}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend em{width:14px;height:14px;border-radius:3px;display:inline-block}
+.month-sum{text-align:center;font-size:14px;color:var(--mute);margin-top:10px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(120px);background:var(--card2);border-radius:6px;padding:6px 6px 6px 16px;display:flex;gap:12px;align-items:center;transition:transform .2s;z-index:20;max-width:calc(100% - 32px)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast button{background:none;color:var(--turq);font-weight:600}
+.warn{font-size:13px;color:#e67e22;margin:0}
+@media(prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Smoking log</h1>
+
+  <form class="card form" id="form">
+    <div class="date">
+      <button type="button" class="step" id="minus" aria-label="Previous day">‹</button>
+      <div class="val" aria-live="polite"><b id="dateMain"></b><span id="dateSub"></span></div>
+      <button type="button" class="step" id="plus" aria-label="Next day">›</button>
+    </div>
+    <button class="primary" type="submit" id="submit">Log a cigarette</button>
+    <div class="day-note"><span id="dayCount"></span><button type="button" id="removeOne" hidden>Remove one</button></div>
+  </form>
+
+  <div class="stats" id="stats"></div>
+
+  <section class="card" aria-label="Calendar">
+    <div class="cal-head">
+      <button type="button" class="nav" id="prev" aria-label="Previous month">‹</button>
+      <h2 id="monthTitle"></h2>
+      <button type="button" class="nav" id="next" aria-label="Next month">›</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="month-sum" id="monthSum"></p>
+    <div class="legend">
+      <span><em style="background:#a5342a"></em>1</span>
+      <span><em style="background:var(--red2)"></em>2–3</span>
+      <span><em style="background:var(--red)"></em>4+</span>
+      <span><em style="box-shadow:inset 0 0 0 2px var(--turq)"></em>Today</span>
+    </div>
+  </section>
+  <p class="warn" id="storeWarn" hidden>Storage is unavailable here, so entries won't be kept after you close the page.</p>
+</main>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button type="button" id="undo">Undo</button></div>
+
+<script>
+{
+const KEY='smoke.log.v1';
+const $=id=>document.getElementById(id);
+
+/* ---- dates (local, YYYY-MM-DD) ---- */
+const pad=n=>String(n).padStart(2,'0');
+const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parse=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const today=()=>iso(new Date());
+const shift=(s,n)=>{const d=parse(s);d.setDate(d.getDate()+n);return iso(d)};
+const diff=(a,b)=>Math.round((parse(a)-parse(b))/864e5);
+const fmt=s=>parse(s).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:parse(s).getFullYear()===new Date().getFullYear()?undefined:'numeric'});
+const rel=s=>{const n=diff(today(),s);return n===0?'Today':n===1?'Yesterday':`${n} days ago`};
+
+/* ---- storage: { "YYYY-MM-DD": count } ---- */
+let log={};
+try{const v=JSON.parse(localStorage.getItem(KEY)||'{}');if(v&&typeof v==='object'&&!Array.isArray(v))log=v}catch(e){$('storeWarn').hidden=false}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(log))}catch(e){$('storeWarn').hidden=false}};
+const count=s=>+log[s]||0;
+
+/* ---- state ---- */
+let sel=today();
+let view=(()=>{const d=new Date();return{y:d.getFullYear(),m:d.getMonth()}})();
+let lastAdd=null,tt;
+
+/* ---- form ---- */
+function paintForm(){
+  $('dateMain').textContent=fmt(sel);
+  $('dateSub').textContent=rel(sel);
+  $('plus').disabled=sel>=today();
+  const c=count(sel);
+  $('dayCount').textContent=c?`${c} logged on this day`:'Nothing logged on this day';
+  $('removeOne').hidden=!c;
+}
+$('minus').addEventListener('click',()=>{sel=shift(sel,-1);follow();render()});
+$('plus').addEventListener('click',()=>{if(sel<today()){sel=shift(sel,1);follow();render()}});
+const follow=()=>{const d=parse(sel);view={y:d.getFullYear(),m:d.getMonth()}};
+$('form').addEventListener('submit',e=>{
+  e.preventDefault();
+  if(sel>today())return;
+  log[sel]=count(sel)+1;lastAdd=sel;save();render();
+  toast(`Logged for ${rel(sel).toLowerCase()}`);
+});
+$('removeOne').addEventListener('click',()=>{
+  const c=count(sel);if(!c)return;
+  if(c===1)delete log[sel];else log[sel]=c-1;
+  save();render();
+});
+function toast(msg){
+  $('toastMsg').textContent=msg;$('toast').classList.add('show');
+  clearTimeout(tt);tt=setTimeout(()=>$('toast').classList.remove('show'),4000);
+}
+$('undo').addEventListener('click',()=>{
+  if(lastAdd&&count(lastAdd)){const c=count(lastAdd);if(c===1)delete log[lastAdd];else log[lastAdd]=c-1;save();render()}
+  lastAdd=null;$('toast').classList.remove('show');
+});
+
+/* ---- stats ---- */
+function stats(){
+  const t=today(),days=Object.keys(log).filter(k=>count(k)>0&&k<=t).sort();
+  const sumRange=n=>{let s=0;for(let i=0;i<n;i++)s+=count(shift(t,-i));return s};
+  const daysRange=n=>{let s=0;for(let i=0;i<n;i++)if(count(shift(t,-i)))s++;return s};
+  let since='—',longest='—';
+  if(days.length){
+    const last=days[days.length-1];
+    since=count(t)?0:diff(t,last);             // smoke-free days since last, counting today
+    let best=0;
+    for(let i=1;i<days.length;i++)best=Math.max(best,diff(days[i],days[i-1])-1);
+    longest=Math.max(best,since);
+  }
+  const s=[
+    {v:since,l:'Smoke-free days in a row',good:since!=='—'&&since>0},
+    {v:longest,l:'Longest smoke-free run'},
+    {v:`${daysRange(7)}/7`,l:`Days smoked this week · ${sumRange(7)} total`},
+    {v:`${daysRange(30)}/30`,l:`Days smoked last 30 · ${sumRange(30)} total`}
+  ];
+  $('stats').innerHTML=s.map(x=>`<div class="stat${x.good?' good':''}"><b>${x.v}</b><span>${x.l}</span></div>`).join('');
+}
+
+/* ---- calendar ---- */
+const wdNames=(()=>{const out=[],d=new Date(2024,0,1);for(let i=0;i<7;i++){out.push(d.toLocaleDateString(undefined,{weekday:'narrow'}));d.setDate(d.getDate()+1)}return out})(); // Mon-first
+function cal(){
+  const{y,m}=view,first=new Date(y,m,1),n=new Date(y,m+1,0).getDate(),lead=(first.getDay()+6)%7,t=today();
+  $('monthTitle').textContent=first.toLocaleDateString(undefined,{month:'long',year:'numeric'});
+  const now=new Date();$('next').disabled=y>now.getFullYear()||(y===now.getFullYear()&&m>=now.getMonth());
+  let cells=wdNames.map(w=>`<div class="wd">${w}</div>`).join('');
+  for(let i=0;i<lead;i++)cells+=`<div class="d blank"></div>`;
+  let mDays=0,mTotal=0;
+  for(let d=1;d<=n;d++){
+    const k=`${y}-${pad(m+1)}-${pad(d)}`,c=count(k),fut=k>t;
+    if(c){mDays++;mTotal+=c}
+    const cls=['d',c>=4?'s3':c>=2?'s2':c?'s1':'',k===t?'today':'',k===sel?'sel':'',fut?'future':''].join(' ');
+    const label=parse(k).toLocaleDateString(undefined,{month:'long',day:'numeric'})+(c?`, ${c} logged`:'');
+    cells+=`<button type="button" class="${cls}" data-k="${k}" ${fut?'disabled':''} aria-label="${label}">${d}${c>1?`<i>${c}</i>`:''}</button>`;
+  }
+  $('grid').innerHTML=cells;
+  $('monthSum').textContent=mDays?`Smoked on ${mDays} day${mDays>1?'s':''} this month · ${mTotal} total`:'No cigarettes logged this month';
+}
+$('grid').addEventListener('click',e=>{const b=e.target.closest('[data-k]');if(b&&!b.disabled){sel=b.dataset.k;render()}});
+$('prev').addEventListener('click',()=>{view=view.m?{y:view.y,m:view.m-1}:{y:view.y-1,m:11};cal()});
+$('next').addEventListener('click',()=>{if($('next').disabled)return;view=view.m<11?{y:view.y,m:view.m+1}:{y:view.y+1,m:0};cal()});
+document.addEventListener('keydown',e=>{if(e.target.closest('input'))return;if(e.key==='ArrowLeft')$('prev').click();if(e.key==='ArrowRight')$('next').click()});
+
+function render(){paintForm();stats();cal()}
+/* keep "today" correct if the page stays open past midnight */
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){if(sel>today())sel=today();render()}});
+render();
+}
+</script>
+</body>
+</html>
