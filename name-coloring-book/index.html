@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>My Name Coloring Book</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #3b3355;
+    --paper: #fffdf8;
+    --panel: #ffffff;
+    --line: #ece6f5;
+    --accent: #8b7fd1;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Fredoka", "Arial Rounded MT Bold", system-ui, sans-serif;
+    color: var(--ink);
+    background: #f6f1fb;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+  }
+  header {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+  header h1 { font-size: 20px; margin: 0 6px 0 0; font-weight: 700; white-space: nowrap; }
+  form { display: flex; gap: 8px; flex: 1; min-width: 220px; }
+  input[type=text] {
+    flex: 1; min-width: 0;
+    font: inherit; font-size: 18px; font-weight: 600;
+    padding: 8px 14px; border-radius: 999px;
+    border: 2px solid var(--line); background: var(--panel); color: var(--ink);
+    outline: none; -webkit-user-select: text; user-select: text;
+  }
+  input[type=text]:focus { border-color: var(--accent); }
+  button {
+    font: inherit; font-weight: 600; font-size: 16px; color: var(--ink);
+    border: 2px solid var(--line); background: var(--panel);
+    border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:active { transform: scale(0.96); }
+
+  #stage {
+    flex: 1; min-height: 0; position: relative;
+    margin: 0 12px; display: flex; align-items: center; justify-content: center;
+  }
+  #board {
+    position: relative; background: var(--paper);
+    border-radius: 18px; box-shadow: 0 4px 18px rgba(80, 60, 130, 0.12);
+    overflow: hidden; touch-action: none;
+  }
+  #board canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #outline { pointer-events: none; }
+  #paint { cursor: crosshair; }
+
+  #tools {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center;
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  .group {
+    display: flex; gap: 6px; align-items: center;
+    background: var(--panel); border-radius: 999px; padding: 6px 8px;
+    border: 2px solid var(--line);
+  }
+  .swatch {
+    width: 34px; height: 34px; border-radius: 50%; padding: 0;
+    border: 3px solid #fff; box-shadow: 0 0 0 2px var(--line);
+  }
+  .swatch.on { box-shadow: 0 0 0 3px var(--ink); }
+  .size { width: 38px; height: 38px; padding: 0; display: grid; place-items: center; }
+  .size span { display: block; border-radius: 50%; background: var(--ink); }
+  .tool.on, .size.on { background: #efeafb; border-color: var(--accent); }
+  .tool { display: inline-flex; align-items: center; gap: 6px; }
+  .tool svg { width: 20px; height: 20px; }
+  .sticker-wrap { position: relative; }
+  #stickerBtn .cur { font-size: 20px; line-height: 1; }
+  #stickerPanel {
+    position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
+    box-shadow: 0 8px 24px rgba(80, 60, 130, 0.18);
+    padding: 10px; display: none; z-index: 10;
+    grid-template-columns: repeat(6, 44px); gap: 6px;
+  }
+  #stickerPanel.open { display: grid; }
+  #stickerPanel button {
+    width: 44px; height: 44px; padding: 0; font-size: 26px; line-height: 1;
+    border-radius: 12px; border: 2px solid transparent; background: transparent;
+  }
+  #stickerPanel button.on { border-color: var(--accent); background: #efeafb; }
+  #toast {
+    position: fixed; left: 50%; top: 14px; transform: translate(-50%, -20px);
+    background: var(--ink); color: #fff; font-weight: 600;
+    padding: 10px 18px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .2s, transform .2s; z-index: 20;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  label.toggle { display: inline-flex; gap: 6px; align-items: center; font-weight: 600; padding: 0 6px; cursor: pointer; }
+  label.toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🖍️ Color My Name</h1>
+  <form id="nameForm" autocomplete="off">
+    <input id="nameInput" type="text" maxlength="20" placeholder="Type your name" value="Sofia" aria-label="Your name">
+    <button class="primary" type="submit">Draw it!</button>
+  </form>
+</header>
+
+<div id="stage">
+  <div id="board">
+    <canvas id="paint"></canvas>
+    <canvas id="outline"></canvas>
+  </div>
+</div>
+
+<div id="tools">
+  <div class="group" id="palette" role="radiogroup" aria-label="Colors"></div>
+  <div class="group">
+    <button class="tool" id="eraserBtn" aria-label="Eraser">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 17l8-8 7 7-4 4H7z" fill="#ffd1dc"/><path d="M11 9l4-4 6 6-3 5"/><path d="M7 20h13"/></svg>
+      Eraser
+    </button>
+    <div class="sticker-wrap">
+      <button class="tool" id="stickerBtn" aria-label="Stickers" aria-expanded="false">
+        <span class="cur">⭐</span> Stickers
+      </button>
+      <div id="stickerPanel" role="listbox" aria-label="Pick a sticker"></div>
+    </div>
+  </div>
+  <div class="group" id="sizes" aria-label="Brush size"></div>
+  <div class="group">
+    <label class="toggle"><input type="checkbox" id="insideToggle" checked> Stay inside</label>
+  </div>
+  <div class="group">
+    <button id="undoBtn">↩︎ Undo</button>
+    <button id="clearBtn">Clear</button>
+    <button id="saveBtn" class="primary" hidden>💾 Save picture</button>
+  </div>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  const COLORS = [
+    "#ffadad", "#ffc8a2", "#ffe5a0", "#fdffb6", "#caffbf", "#a8e6cf",
+    "#9bf6ff", "#a0c4ff", "#bdb2ff", "#ffc6ff", "#f4c2c2", "#d7c4a3"
+  ];
+  const SIZES = [0.012, 0.028, 0.055]; // fraction of the board's shorter side
+  const STICKER_SIZES = [0.08, 0.14, 0.22]; // emoji height, fraction of shorter side
+  const STICKERS = [
+    "⭐", "🌈", "❤️", "🌸", "🌻", "🦋",
+    "🐶", "🐱", "🐰", "🦄", "🐻", "🐼",
+    "🦖", "🐠", "🐞", "🍓", "🍦", "🎈",
+    "🚀", "☀️", "🌙", "✨", "👑", "🎉"
+  ];
+  const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  const FONT = '"Fredoka", "Arial Rounded MT Bold", "Arial Black", sans-serif';
+  const OUTLINE = "#3b3355";
+
+  const stage = document.getElementById("stage");
+  const board = document.getElementById("board");
+  const paint = document.getElementById("paint");
+  const outline = document.getElementById("outline");
+  const pctx = paint.getContext("2d");
+  const octx = outline.getContext("2d");
+  const mask = document.createElement("canvas");      // filled letters
+  const scratch = document.createElement("canvas");   // per-segment work area
+  const mctx = mask.getContext("2d");
+  const sctx = scratch.getContext("2d");
+
+  const state = {
+    color: COLORS[0], tool: "brush", sticker: STICKERS[0], sizeIdx: 1, inside: true,
+    W: 0, H: 0, drawing: false, last: null, undo: []
+  };
+
+  // ---------- UI ----------
+  const palette = document.getElementById("palette");
+  COLORS.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "swatch" + (i === 0 ? " on" : "");
+    b.style.background = c;
+    b.setAttribute("aria-label", "Color " + c);
+    b.onclick = () => { state.color = c; state.tool = "brush"; syncUI(); };
+    b.dataset.color = c;
+    palette.appendChild(b);
+  });
+  const sizes = document.getElementById("sizes");
+  SIZES.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "size";
+    b.setAttribute("aria-label", ["Small", "Medium", "Big"][i] + " brush");
+    const dot = document.createElement("span");
+    const d = [8, 16, 26][i];
+    dot.style.width = dot.style.height = d + "px";
+    b.appendChild(dot);
+    b.onclick = () => { state.sizeIdx = i; syncUI(); };
+    sizes.appendChild(b);
+  });
+  const eraserBtn = document.getElementById("eraserBtn");
+  eraserBtn.onclick = () => { state.tool = state.tool === "eraser" ? "brush" : "eraser"; closeStickers(); syncUI(); };
+
+  const stickerBtn = document.getElementById("stickerBtn");
+  const stickerPanel = document.getElementById("stickerPanel");
+  STICKERS.forEach(s => {
+    const b = document.createElement("button");
+    b.textContent = s;
+    b.dataset.sticker = s;
+    b.setAttribute("aria-label", "Sticker " + s);
+    b.onclick = e => {
+      e.stopPropagation();
+      state.sticker = s; state.tool = "stamp";
+      closeStickers(); syncUI();
+    };
+    stickerPanel.appendChild(b);
+  });
+  stickerBtn.onclick = e => {
+    e.stopPropagation();
+    const open = !stickerPanel.classList.contains("open");
+    stickerPanel.classList.toggle("open", open);
+    stickerBtn.setAttribute("aria-expanded", open);
+    state.tool = "stamp"; syncUI();
+  };
+  function closeStickers() {
+    stickerPanel.classList.remove("open");
+    stickerBtn.setAttribute("aria-expanded", "false");
+  }
+  document.addEventListener("pointerdown", e => {
+    if (!e.target.closest(".sticker-wrap")) closeStickers();
+  });
+  document.getElementById("insideToggle").onchange = e => { state.inside = e.target.checked; };
+  document.getElementById("undoBtn").onclick = undo;
+  document.getElementById("clearBtn").onclick = () => { pushUndo(); pctx.clearRect(0, 0, state.W, state.H); };
+
+  function syncUI() {
+    palette.querySelectorAll(".swatch").forEach(b =>
+      b.classList.toggle("on", state.tool === "brush" && b.dataset.color === state.color));
+    eraserBtn.classList.toggle("on", state.tool === "eraser");
+    stickerBtn.classList.toggle("on", state.tool === "stamp");
+    stickerBtn.querySelector(".cur").textContent = state.sticker;
+    stickerPanel.querySelectorAll("button").forEach(b =>
+      b.classList.toggle("on", b.dataset.sticker === state.sticker));
+    sizes.querySelectorAll(".size").forEach((b, i) => {
+      b.classList.toggle("on", i === state.sizeIdx);
+      b.querySelector("span").style.background = state.tool === "eraser" ? "#fff" : state.color;
+      b.querySelector("span").style.boxShadow = "0 0 0 2px " + OUTLINE;
+    });
+  }
+
+  // ---------- Layout ----------
+  function fitBoard() {
+    if (!state.W) return;
+    const r = stage.getBoundingClientRect();
+    const s = Math.min(r.width / state.W, r.height / state.H);
+    board.style.width = Math.floor(state.W * s) + "px";
+    board.style.height = Math.floor(state.H * s) + "px";
+  }
+
+  function layoutText(text, W, H) {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    const candidates = [[words.join(" ")]];
+    for (let n = 2; n <= Math.min(3, words.length); n++) candidates.push(wrapInto(words, n));
+    octx.font = `700 100px ${FONT}`;
+    let best = null;
+    for (const lines of candidates) {
+      const maxW = Math.max(...lines.map(l => octx.measureText(l).width)) / 100;
+      const size = Math.min((W * 0.88) / maxW, (H * 0.82) / (lines.length * 1.08));
+      if (!best || size > best.size) best = { lines, size };
+    }
+    return best;
+  }
+  function wrapInto(words, n) {
+    // balanced split by character count
+    const total = words.join(" ").length, target = total / n;
+    const lines = []; let cur = [];
+    for (const w of words) {
+      const curLen = cur.join(" ").length;
+      if (cur.length && lines.length < n - 1 && curLen + w.length / 2 > target) { lines.push(cur.join(" ")); cur = []; }
+      cur.push(w);
+    }
+    lines.push(cur.join(" "));
+    return lines;
+  }
+
+  function drawText(ctx, lay, W, H, mode) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.font = `700 ${lay.size}px ${FONT}`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    const lh = lay.size * 1.08;
+    const y0 = H / 2 - (lay.lines.length - 1) * lh / 2 + lay.size * 0.04;
+    const lw = Math.max(4, lay.size * 0.045);
+    lay.lines.forEach((line, i) => {
+      const y = y0 + i * lh;
+      if (mode === "mask") {
+        ctx.fillStyle = "#000"; ctx.strokeStyle = "#000"; ctx.lineWidth = lw;
+        ctx.fillText(line, W / 2, y); ctx.strokeText(line, W / 2, y);
+      } else {
+        ctx.strokeStyle = OUTLINE; ctx.lineWidth = lw;
+        ctx.strokeText(line, W / 2, y);
+      }
+    });
+  }
+
+  async function generate(name) {
+    name = (name || "").slice(0, 20).trim() || "Hi!";
+    try { await document.fonts.load(`700 100px "Fredoka"`, name); } catch (e) {}
+    const r = stage.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    let W = Math.round(r.width * dpr), H = Math.round(r.height * dpr);
+    const cap = 2200 / Math.max(W, H);
+    if (cap < 1) { W = Math.round(W * cap); H = Math.round(H * cap); }
+    state.W = W; state.H = H;
+    for (const c of [paint, outline, mask, scratch]) { c.width = W; c.height = H; }
+    const lay = layoutText(name, W, H);
+    drawText(mctx, lay, W, H, "mask");
+    drawText(octx, lay, W, H, "outline");
+    state.undo = [];
+    fitBoard();
+  }
+
+  // ---------- Painting ----------
+  function toCanvas(e) {
+    const r = paint.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * state.W / r.width, y: (e.clientY - r.top) * state.H / r.height };
+  }
+  function radius() { return SIZES[state.sizeIdx] * Math.min(state.W, state.H) * (state.tool === "eraser" ? 1.4 : 1); }
+
+  // Stickers sit on the paint layer, so the eraser, Undo and Clear all work on them.
+  function stamp(p) {
+    const size = STICKER_SIZES[state.sizeIdx] * Math.min(state.W, state.H);
+    pctx.save();
+    pctx.font = `${Math.round(size)}px ${EMOJI_FONT}`;
+    pctx.textAlign = "center";
+    pctx.textBaseline = "middle";
+    pctx.fillText(state.sticker, p.x, p.y);
+    pctx.restore();
+  }
+  // While dragging, redraw from the pre-stroke snapshot so the sticker follows the finger.
+  function moveStamp(p) {
+    const base = state.undo[state.undo.length - 1];
+    pctx.clearRect(0, 0, state.W, state.H);
+    if (base) pctx.drawImage(base, 0, 0);
+    stamp(p);
+  }
+
+  function segment(a, b) {
+    const rad = radius();
+    if (state.tool === "eraser") {
+      pctx.save();
+      pctx.globalCompositeOperation = "destination-out";
+      strokeLine(pctx, a, b, rad, "#000");
+      pctx.restore();
+      return;
+    }
+    if (!state.inside) { strokeLine(pctx, a, b, rad, state.color); return; }
+    // Paint into a small bbox on scratch, clip it to the letters, then stamp it down.
+    const pad = rad + 2;
+    const x = Math.max(0, Math.floor(Math.min(a.x, b.x) - pad));
+    const y = Math.max(0, Math.floor(Math.min(a.y, b.y) - pad));
+    const w = Math.min(state.W, Math.ceil(Math.max(a.x, b.x) + pad)) - x;
+    const h = Math.min(state.H, Math.ceil(Math.max(a.y, b.y) + pad)) - y;
+    if (w <= 0 || h <= 0) return;
+    sctx.clearRect(x, y, w, h);
+    strokeLine(sctx, a, b, rad, state.color);
+    sctx.globalCompositeOperation = "destination-in";
+    sctx.drawImage(mask, x, y, w, h, x, y, w, h);
+    sctx.globalCompositeOperation = "source-over";
+    pctx.drawImage(scratch, x, y, w, h, x, y, w, h);
+  }
+  function strokeLine(ctx, a, b, rad, color) {
+    ctx.strokeStyle = color; ctx.lineWidth = rad * 2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x + 0.01, b.y); ctx.stroke();
+  }
+
+  function pushUndo() {
+    const c = document.createElement("canvas");
+    c.width = state.W; c.height = state.H;
+    c.getContext("2d").drawImage(paint, 0, 0);
+    state.undo.push(c);
+    if (state.undo.length > 10) state.undo.shift();
+  }
+  function undo() {
+    const c = state.undo.pop();
+    if (!c) return;
+    pctx.clearRect(0, 0, state.W, state.H);
+    pctx.drawImage(c, 0, 0);
+  }
+
+  paint.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    paint.setPointerCapture(e.pointerId);
+    pushUndo();
+    state.drawing = true;
+    state.last = toCanvas(e);
+    if (state.tool === "stamp") stamp(state.last);
+    else segment(state.last, state.last);
+  });
+  paint.addEventListener("pointermove", e => {
+    if (!state.drawing) return;
+    if (state.tool === "stamp") { moveStamp(toCanvas(e)); return; }
+    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (evs.length ? evs : [e])) {
+      const p = toCanvas(ev);
+      segment(state.last, p);
+      state.last = p;
+    }
+  });
+  const end = () => { state.drawing = false; state.last = null; };
+  paint.addEventListener("pointerup", end);
+  paint.addEventListener("pointercancel", end);
+
+  document.getElementById("nameForm").addEventListener("submit", e => {
+    e.preventDefault();
+    document.getElementById("nameInput").blur();
+    generate(document.getElementById("nameInput").value);
+  });
+  window.addEventListener("resize", fitBoard);
+
+  // ---------- Save picture ----------
+  const saveBtn = document.getElementById("saveBtn");
+  const toast = document.getElementById("toast");
+  let toastTimer;
+  function say(msg) {
+    toast.textContent = msg;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+  }
+  function flatten() {
+    // paper + paint + outline, exactly as shown on screen
+    const c = document.createElement("canvas");
+    c.width = state.W; c.height = state.H;
+    const x = c.getContext("2d");
+    x.fillStyle = "#fffdf8";
+    x.fillRect(0, 0, c.width, c.height);
+    x.drawImage(paint, 0, 0);
+    x.drawImage(outline, 0, 0);
+    return new Promise(res => c.toBlob(res, "image/png"));
+  }
+  function fileName() {
+    const n = document.getElementById("nameInput").value.trim()
+      .replace(/[^\p{L}\p{N} _-]/gu, "").replace(/\s+/g, "-").slice(0, 20);
+    return (n || "my-name") + "-coloring.png";
+  }
+  // Outside claude.ai, fall back to a regular browser download.
+  const browserDownloads = {
+    async save({ filename, data }) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(data);
+      a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+  };
+  let downloads = null;
+  if (window.claude && typeof window.claude.use === "function") {
+    window.claude.use("downloads").then(d => {
+      downloads = d;
+      if (d) saveBtn.hidden = false;
+    }).catch(() => {});
+  } else {
+    downloads = browserDownloads;
+    saveBtn.hidden = false;
+  }
+  saveBtn.addEventListener("click", async () => {
+    if (!downloads) return;
+    saveBtn.disabled = true;
+    try {
+      const blob = await flatten();
+      await downloads.save({ filename: fileName(), data: blob });
+      say("Picture saved! 🎉");
+    } catch (err) {
+      const code = err && err.code;
+      if (code === "declined") {}
+      else if (code === "rate_limited") say("One moment, then try again.");
+      else if (code === "host_unavailable") { say("Open this page in a browser to save pictures."); saveBtn.hidden = true; }
+      else { say("Saving isn't available here."); if (code !== "bad_request") saveBtn.hidden = true; }
+    } finally {
+      saveBtn.disabled = false;
+    }
+  });
+
+  syncUI();
+  generate(document.getElementById("nameInput").value);
+})();
+</script>
+</body>
+</html>
