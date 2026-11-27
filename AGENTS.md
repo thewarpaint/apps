@@ -45,6 +45,7 @@ Never rename a storage key without migrating the data, or users lose it.
     - `flat`: in-between greys under 12% (cartoons). Drawn dark lines are kept, and colour edges are added only away from them.
     - `photo`: Canny-style edges. The Detail slider keeps 5–35% of the strongest ridges. The worker caches the edges per `id`, so moving the slider only re-thresholds.
   - Lines are drawn into `#outline` in the outline colour. Results for a stale `id` are dropped. The Lines/Photo toggle and Detail slider sit in `#picTools` over the board.
+  - `#loader` (spinning rainbow ring and message) covers the stage from file pick until the lines arrive, via `showLoader()` and `hideLoader()`. For Detail changes it shows only after 150ms. Errors and `generate()` hide it.
   - **Stay-inside on pictures:** `findRegions()` labels the closed shapes between the lines, thickening the lines by 2px to close gaps, and records each shape's bounding box. On pointerdown with the brush, `regionMask()` sets `mask` to the shape under the pointer grown by 4px, working only inside its bounding box. Starting on a line paints freely. Stay-inside is disabled in Photo view.
   - Clear on a picture removes the picture too and goes back to the name. The picture and its paint are snapshotted into `state.restore`, and Undo with an empty undo stack restores them, re-fitted to the current board. `generate()` and `usePicture()` drop the snapshot.
 - **Toolbar:**

@@ -88,9 +88,30 @@
   .seg button { padding: 4px 10px; font-size: 14px; min-height: 32px; }
   .seg button[aria-pressed="true"] { background: #efeafb; border-color: var(--accent); }
   #detailWrap { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; min-width: 0; }
-  #detailWrap[hidden], #picBusy[hidden] { display: none; }
+  #detailWrap[hidden] { display: none; }
   #detail { width: 90px; min-width: 50px; accent-color: var(--accent); }
-  #picBusy { font-size: 13px; font-weight: 600; padding: 0 6px; white-space: nowrap; }
+  /* Loading overlay while a picture is turned into a coloring page */
+  #loader {
+    position: absolute; inset: 0; z-index: 8;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: rgba(246, 241, 251, .7); font-weight: 600; text-align: center; padding: 16px;
+    animation: loaderIn .2s ease-out;
+  }
+  #loader[hidden] { display: none; }
+  #loader .ring {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: conic-gradient(#ffadad, #ffe5a0, #caffbf, #9bf6ff, #bdb2ff, #ffc6ff, #ffadad);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    animation: spin 1s linear infinite;
+  }
+  #loader span { background: var(--panel); border: 2px solid var(--line); border-radius: 999px; padding: 6px 14px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes loaderIn { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    #loader { animation: none; }
+    #loader .ring { animation-duration: 3s; }
+  }
   button:disabled:active { transform: none; }
   header .icon { flex: none; }
   #paint { cursor: crosshair; }
@@ -235,7 +256,10 @@
       <button type="button" id="viewPhoto" aria-pressed="false">Photo</button>
     </div>
     <label id="detailWrap" hidden>Detail <input type="range" id="detail" min="0" max="1" step="0.05" value="0.35"></label>
-    <span id="picBusy" hidden>Making lines…</span>
+  </div>
+  <div id="loader" role="status" aria-live="polite" hidden>
+    <div class="ring" aria-hidden="true"></div>
+    <span>Making your coloring page…</span>
   </div>
 </div>
 
@@ -692,6 +716,7 @@ function boxBlur(a, w, h, r) {
   }
 
   async function generate(name) {
+    hideLoader();
     name = (name || "").slice(0, 20).trim() || "Hi!";
     try { await document.fonts.load(`700 100px "Fredoka"`, name); } catch (e) {}
     const { W, H } = canvasSize();
@@ -728,7 +753,6 @@ function boxBlur(a, w, h, r) {
     viewLines.setAttribute("aria-pressed", lines);
     viewPhoto.setAttribute("aria-pressed", pic && !lines);
     viewLines.disabled = pic && !lay.art;
-    picBusy.hidden = !pic || !!lay.art || lay.failed;
     detailWrap.hidden = !(lines && lay.kind === "photo");
   }
   function canvasSize() {
@@ -926,7 +950,18 @@ function boxBlur(a, w, h, r) {
   const viewPhoto = document.getElementById("viewPhoto");
   const detailWrap = document.getElementById("detailWrap");
   const detailInput = document.getElementById("detail");
-  const picBusy = document.getElementById("picBusy");
+  const loader = document.getElementById("loader");
+  let loaderTimer;
+  // Show the loading overlay, right away or only if the work takes longer than `delay` ms.
+  function showLoader(delay = 0) {
+    clearTimeout(loaderTimer);
+    if (delay) loaderTimer = setTimeout(() => { loader.hidden = false; }, delay);
+    else loader.hidden = false;
+  }
+  function hideLoader() {
+    clearTimeout(loaderTimer);
+    loader.hidden = true;
+  }
   const LINE_RGB = [0x3b, 0x33, 0x55]; // same ink as the name outlines
   let picSeq = 0, worker = null;
 
@@ -947,8 +982,10 @@ function boxBlur(a, w, h, r) {
       state.src = null;
       drawLayers({ ...lay, art, kind: m.kind, view: lay.art ? lay.view : "lines" });
       syncMode();
+      hideLoader();
     };
     worker.onerror = () => {
+      hideLoader();
       if (state.lay && state.lay.img) { state.lay.failed = true; syncMode(); }
       say("Couldn't make lines from that picture.");
     };
@@ -966,6 +1003,7 @@ function boxBlur(a, w, h, r) {
     try {
       getWorker().postMessage({ id: lay.id, w, h, data, detail: +detailInput.value }, [data]);
     } catch (err) {
+      hideLoader();
       lay.failed = true; syncMode();
     }
   }
@@ -974,7 +1012,11 @@ function boxBlur(a, w, h, r) {
   let detailTimer;
   detailInput.addEventListener("input", () => {
     clearTimeout(detailTimer);
-    detailTimer = setTimeout(() => { if (state.lay.img) makeLines(state.lay); }, 200);
+    detailTimer = setTimeout(() => {
+      if (!state.lay.img) return;
+      showLoader(150); // re-thresholding is usually quick: only show the overlay if it isn't
+      makeLines(state.lay);
+    }, 200);
   });
 
   // Closed shapes between the picture's lines, so "stay inside" can keep the
@@ -1061,6 +1103,7 @@ function boxBlur(a, w, h, r) {
     const f = photoInput.files[0];
     photoInput.value = "";
     if (!f) return;
+    showLoader();
     const url = URL.createObjectURL(f);
     try {
       const img = new Image();
@@ -1075,6 +1118,7 @@ function boxBlur(a, w, h, r) {
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
       usePicture(c);
     } catch (err) {
+      hideLoader();
       say("Couldn't open that picture.");
     } finally {
       URL.revokeObjectURL(url);
