@@ -39,6 +39,7 @@ Never rename a storage key without migrating the data, or users lose it.
 - **Name vs picture:** `state.lay` is `{lines, size}` for a name or `{img, size}` for a picture, where `size` is the cover-fit scale. Both are centred.
   - The photo button (`#photoBtn`) loads an image, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That cover-fits it into `#bg`, clears the letters, paint and undo history, fills `mask` so the whole board is paintable, and disables stay-inside.
   - "Draw it!" (`generate()`) goes back to a name. Saving flattens paper, picture, paint and outline.
+  - Clear on a picture removes the picture too and goes back to the name. The picture and its paint are snapshotted into `state.restore`, and Undo with an empty undo stack restores them, re-fitted to the current board. `generate()` and `usePicture()` drop the snapshot.
 - **Toolbar:**
   - The top row holds brush sizes, eraser, stickers and the stay-inside toggle.
   - Below it, the palette and the undo/clear/save group share one row, centred vertically.
