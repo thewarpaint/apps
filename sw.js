@@ -7,7 +7,7 @@
 // Bump CACHE_NAME whenever sw.js or any precached file changes - the new
 // string is what makes browsers install the update and drop the old cache.
 // Versioned by the PR that ships the change, so two PRs can't collide.
-var CACHE_NAME = 'apps-v19';
+var CACHE_NAME = 'apps-v20';
 
 // How long a page navigation waits on the network before falling back to
 // the cached copy (see the fetch handler).
@@ -48,6 +48,8 @@ var PRECACHE_PATHS = [
   'coloring/icons/icon-192.png',
   'coloring/icons/icon-512.png',
   'coloring/icons/apple-touch-icon.png',
+  'coloring/images/true.png',
+  'coloring/images/trolls.png',
 
   // Self-hosted so the coloring book's font works offline.
   'vendor/fredoka/fredoka-latin.woff2',

@@ -23,7 +23,7 @@ Never rename a storage key without migrating the data, or users lose it.
   - It only handles same-origin requests.
   - Offline, a URL without the trailing slash redirects to the slash form so relative links resolve.
 - **Bump `CACHE_NAME` (`apps-v<PR number>`) in every PR that changes a precached file.** Otherwise users keep getting the old copy.
-- **`PRECACHE_PATHS`** must list, for each app: `<app>/`, `index.html`, `manifest.json`, and `icons/{icon.svg,icon-192.png,icon-512.png,apple-touch-icon.png}`. One failed URL fails the whole install.
+- **`PRECACHE_PATHS`** must list, for each app: `<app>/`, `index.html`, `manifest.json`, and `icons/{icon.svg,icon-192.png,icon-512.png,apple-touch-icon.png}`, plus any bundled assets such as `coloring/images/*.png`. One failed URL fails the whole install.
 - **Manifests:** the root and each app have their own `manifest.json`, so each app installs separately. Each manifest sets `id`, `start_url` and `scope` to `"./"` and lists the 512px PNG again as maskable.
 - **Icons:** edit `icons/icon.svg`, keep the artwork inside the central ~60% so maskable crops don't cut it, then run `node tools/build-icons.js` (needs Playwright).
 - **Head tags:** every page needs `theme-color`, the `mobile-web-app-capable` and `apple-mobile-web-app-*` metas, the manifest link, the SVG and PNG icons, `apple-touch-icon`, and the service worker registration script before `</body>`.
@@ -37,7 +37,9 @@ Never rename a storage key without migrating the data, or users lose it.
 ## Coloring book specifics
 - **Canvas layers:** `#bg` holds an uploaded picture in Photo view, `#paint` holds strokes and stickers, and `#outline` holds the letter outlines or a picture's lines. Off-screen, `mask` holds the filled letters (used for "stay inside" clipping) and `scratch` is a per-segment work area.
 - **Name vs picture:** `state.lay` is `{lines, size}` for a name, or for a picture `{img, art, kind, view, fit, id, size}`. For a picture, `size` is the cover scale (`fit: "cover"`, fills the board, cropping) or the contain scale (`fit: "contain"`, whole picture shown). Both are centred.
-  - The photo button (`#photoBtn`) loads an image, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That shows the photo at once (`view: "photo"`), clears the letters, paint and undo history, and calls `makeLines()`.
+  - The photo button (`#photoBtn`) opens `#gallery`, a dialog with the built-in coloring pages from `GALLERY` (files in `coloring/images/`) and an "Upload or take a photo" button that opens the device picker (`#photoInput`, `accept="image/*"`). Escape, the backdrop or × close it.
+    - To add a gallery picture: put it in `coloring/images/`, add `{src, name}` to `GALLERY`, add it to `PRECACHE_PATHS` and bump `CACHE_NAME`.
+  - `openPicture(src)` loads either kind of picture, downscaled to at most 2200px on its longest side, and calls `usePicture()`. That shows the photo at once (`view: "photo"`), clears the letters, paint and undo history, and calls `makeLines()`.
   - `setCanvases()` resizes the canvases and calls `drawLayers()`. `drawLayers()` redraws everything except the paint, so switching view or detail keeps the coloring.
   - "Draw it!" (`generate()`) goes back to a name. Saving flattens paper, picture, paint and outline.
   - **Picture to coloring page:** the inline worker (`#convWorkerSrc`, started from a blob URL) gets the picture at up to 1000px and returns a line mask. `kind` is one of:
