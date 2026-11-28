@@ -7,7 +7,7 @@
 // Bump CACHE_NAME whenever sw.js or any precached file changes - the new
 // string is what makes browsers install the update and drop the old cache.
 // Versioned by the PR that ships the change, so two PRs can't collide.
-var CACHE_NAME = 'apps-v20';
+var CACHE_NAME = 'apps-v21';
 
 // How long a page navigation waits on the network before falling back to
 // the cached copy (see the fetch handler).
