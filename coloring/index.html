@@ -638,7 +638,7 @@ function boxBlur(a, w, h, r) {
     if (state.tool === "stamp" || stickerPanel.classList.contains("open") || document.hidden) return;
     cycleIdx = (cycleIdx + 1) % STICKERS.length;
     showSticker(STICKERS[cycleIdx]);
-  }, 5000);
+  }, 4000);
   const insideBtn = document.getElementById("insideBtn");
   insideBtn.onclick = () => {
     state.inside = !state.inside;
@@ -647,9 +647,10 @@ function boxBlur(a, w, h, r) {
   };
   document.getElementById("undoBtn").onclick = undo;
   document.getElementById("clearBtn").onclick = async () => {
-    if (state.lay && state.lay.img) {
-      // Clearing a picture removes the picture too and goes back to the name.
-      // Keep a snapshot so Undo can bring the picture and its coloring back.
+    if (state.lay && state.lay.img && !hasPaint()) {
+      // With a picture, the first click clears the coloring (below). Once
+      // there's nothing left to clear, the next removes the picture and goes
+      // back to the name. Keep a snapshot so Undo can bring the picture back.
       const snap = snapshot();
       await generate(state.name);
       state.restore = snap;
@@ -658,6 +659,11 @@ function boxBlur(a, w, h, r) {
     pushUndo();
     pctx.clearRect(0, 0, state.W, state.H);
   };
+  function hasPaint() {
+    const d = pctx.getImageData(0, 0, state.W, state.H).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i]) return true;
+    return false;
+  }
 
   function syncUI() {
     palette.querySelectorAll(".swatch").forEach(b =>

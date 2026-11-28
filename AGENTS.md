@@ -48,7 +48,7 @@ Never rename a storage key without migrating the data, or users lose it.
   - `#loader` (spinning rainbow ring and message) covers the stage from file pick until the lines arrive, via `showLoader()` and `hideLoader()`. For Detail changes it shows only after 150ms. Errors and `generate()` hide it.
   - **See-through brush in Photo view:** brush strokes are drawn at full strength on `strokeLayer`. `blendStroke()` then redraws the paint as the pre-stroke undo snapshot plus that layer at `PHOTO_BRUSH_ALPHA` (0.66), so a stroke crossing itself stays one even 66%. Stickers, the eraser, Lines view and name mode are unaffected.
   - **Stay-inside on pictures:** `findRegions()` labels the closed shapes between the lines, thickening the lines by 2px to close gaps, and records each shape's bounding box. On pointerdown with the brush, `regionMask()` sets `mask` to the shape under the pointer grown by 4px, working only inside its bounding box. Starting on a line paints freely. Stay-inside is disabled in Photo view.
-  - Clear on a picture removes the picture too and goes back to the name. The picture and its paint are snapshotted into `state.restore`, and Undo with an empty undo stack restores them, re-fitted to the current board. `generate()` and `usePicture()` drop the snapshot.
+  - Clear on a picture works in two steps. While anything is painted (`hasPaint()`), it clears only the paint and stickers and keeps the picture. Once there's no paint, it removes the picture and goes back to the name. The picture is snapshotted into `state.restore`, and Undo with an empty undo stack restores it with its undo history, re-fitted to the current board. `generate()` and `usePicture()` drop the snapshot.
 - **Toolbar:**
   - The top row holds brush sizes, eraser, stickers and the stay-inside toggle.
   - Below it, the palette and the undo/clear/save group share one row, centred vertically.
@@ -56,7 +56,7 @@ Never rename a storage key without migrating the data, or users lose it.
   - On landscape phones (`orientation: landscape` and `max-height: 500px`), the body becomes a grid with `#tools` set to `display: contents`. `#toolGroup` becomes a column on the left, and `.tool-row` (a 2-column palette over the actions) a column on the right. The sticker panel then anchors to `#toolGroup` and opens to its right.
 - **Board resize:** when the stage's aspect ratio changes by more than 15% (for example, the phone rotates), `relayout()` re-fits the name or picture (keeping the current view, lines and fit from `state.lay`) and scales the paint and undo snapshots about the centre by the ratio of the old and new `lay.size`. Once painted, it keeps the same line breaks. It always re-maps from `state.src`, the last canvas the user drew on, so rotating back restores anything clipped and repeated rotations don't add blur. Any paint edit (`pushUndo`, `undo`, `generate`) resets `state.src`. View and detail changes don't, since they leave the paint alone.
 - **Sticker panel:** in portrait it's anchored to `#tools` (`position: relative`) so it stays on screen. In landscape it anchors to `#toolGroup`.
-- **Sticker button:** it cycles stickers every 5s until the sticker tool is active, then shows the chosen sticker.
+- **Sticker button:** it cycles stickers every 4s until the sticker tool is active, then shows the chosen sticker.
 - **Zoom is blocked on purpose:** gesture events, multi-touch moves, `dblclick` and ctrl+wheel are all cancelled, and `touch-action: manipulation` is set. Keyboard zoom still works.
 
 ## Testing
