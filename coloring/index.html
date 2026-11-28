@@ -191,6 +191,26 @@
     border-radius: 12px; border: 2px solid transparent; background: transparent;
   }
   #stickerPanel button.on { border-color: var(--accent); background: #efeafb; }
+  /* Picture gallery: built-in coloring pages plus an upload button */
+  #gallery {
+    position: fixed; inset: 0; z-index: 30; padding: 16px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(59, 51, 85, .35);
+  }
+  #gallery[hidden] { display: none; }
+  .gallery {
+    width: 100%; max-width: 440px; max-height: 100%; overflow: auto;
+    display: grid; gap: 12px; padding: 14px;
+    background: var(--panel); border-radius: 22px; box-shadow: 0 8px 24px rgba(80, 60, 130, 0.25);
+  }
+  .gal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .gal-head h2 { margin: 0 0 0 4px; font-size: 20px; }
+  .gal-head .icon { font-size: 24px; line-height: 1; }
+  .gal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .gal-item { padding: 6px; border-radius: 16px; display: grid; gap: 4px; font-size: 15px; }
+  .gal-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: #fff; display: block; }
+  .gal-upload { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; }
+  .gal-upload svg { width: 22px; height: 22px; flex: none; }
   #toast {
     position: fixed; left: 50%; top: 14px; transform: translate(-50%, -20px);
     background: var(--ink); color: #fff; font-weight: 600;
@@ -317,6 +337,19 @@
   </div>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="gallery" hidden>
+  <div class="gallery" role="dialog" aria-modal="true" aria-labelledby="galleryTitle">
+    <div class="gal-head">
+      <h2 id="galleryTitle">Pick a picture</h2>
+      <button type="button" class="icon" id="galleryClose" aria-label="Close" title="Close">×</button>
+    </div>
+    <div class="gal-grid" id="galleryGrid"></div>
+    <button type="button" class="primary gal-upload" id="uploadBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M7 9l5-5 5 5"/><path d="M5 20h14"/></svg>
+      Upload or take a photo
+    </button>
+  </div>
+</div>
 
 <script type="text/plain" id="convWorkerSrc">
 "use strict";
@@ -1153,16 +1186,56 @@ function boxBlur(a, w, h, r) {
   }
 
   const photoInput = document.getElementById("photoInput");
-  document.getElementById("photoBtn").onclick = () => photoInput.click();
+  // ---------- Gallery ----------
+  // Built-in coloring pages (coloring/images/, also precached in sw.js).
+  const GALLERY = [
+    { src: "images/true.png", name: "True" },
+    { src: "images/trolls.png", name: "Trolls" }
+  ];
+  const photoBtn = document.getElementById("photoBtn");
+  const gallery = document.getElementById("gallery");
+  const galleryGrid = document.getElementById("galleryGrid");
+  GALLERY.forEach(g => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "gal-item";
+    const im = document.createElement("img");
+    im.src = g.src; im.alt = ""; im.loading = "lazy";
+    const label = document.createElement("span");
+    label.textContent = g.name;
+    b.append(im, label);
+    b.onclick = () => { closeGallery(); openPicture(g.src); };
+    galleryGrid.appendChild(b);
+  });
+  function openGallery() {
+    gallery.hidden = false;
+    galleryGrid.querySelector("button").focus();
+  }
+  function closeGallery() {
+    gallery.hidden = true;
+    photoBtn.focus();
+  }
+  photoBtn.onclick = openGallery;
+  document.getElementById("galleryClose").onclick = closeGallery;
+  gallery.addEventListener("click", e => { if (e.target === gallery) closeGallery(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !gallery.hidden) closeGallery(); });
+  // The device's picker offers the photo library and, on phones, the camera.
+  document.getElementById("uploadBtn").onclick = () => { closeGallery(); photoInput.click(); };
+
   photoInput.addEventListener("change", async () => {
     const f = photoInput.files[0];
     photoInput.value = "";
     if (!f) return;
-    showLoader();
     const url = URL.createObjectURL(f);
+    await openPicture(url);
+    URL.revokeObjectURL(url);
+  });
+  // Load a picture (an uploaded file's blob URL or a gallery image) and color it.
+  async function openPicture(src) {
+    showLoader();
     try {
       const img = new Image();
-      img.src = url;
+      img.src = src;
       await img.decode();
       // Keep a copy at most 2200px on its longest side: big phone photos are
       // far larger than the board and would waste memory.
@@ -1175,10 +1248,8 @@ function boxBlur(a, w, h, r) {
     } catch (err) {
       hideLoader();
       say("Couldn't open that picture.");
-    } finally {
-      URL.revokeObjectURL(url);
     }
-  });
+  }
   let relayoutTimer;
   window.addEventListener("resize", () => {
     fitBoard();
