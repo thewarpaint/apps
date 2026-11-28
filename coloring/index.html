@@ -78,13 +78,14 @@
   button:disabled { opacity: .4; cursor: default; }
   /* Picture controls, shown over the bottom of the board while coloring a picture */
   #picTools {
-    position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); z-index: 5;
+    position: absolute; left: 8px; bottom: 8px; z-index: 5;
     display: flex; gap: 8px; align-items: center; max-width: calc(100% - 16px);
     background: rgba(255, 255, 255, .92); border: 2px solid var(--line); border-radius: 999px;
     padding: 4px 6px; box-shadow: 0 2px 10px rgba(80, 60, 130, 0.15);
   }
   #picTools[hidden] { display: none; }
   .seg { display: flex; gap: 2px; flex: none; }
+  .vsep { width: 2px; height: 22px; background: var(--line); border-radius: 2px; flex: none; }
   .seg button { width: 38px; height: 34px; padding: 0; display: grid; place-items: center; }
   .seg button svg { width: 22px; height: 22px; }
   .seg button[aria-pressed="true"] { background: #efeafb; border-color: var(--accent); }
@@ -254,17 +255,23 @@
     <canvas id="bg"></canvas>
     <canvas id="paint"></canvas>
     <canvas id="outline"></canvas>
-  </div>
-  <div id="picTools" hidden>
-    <div class="seg" role="group" aria-label="Show">
-      <button type="button" id="viewLines" aria-pressed="true" aria-label="Coloring page" title="Coloring page">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="16" cy="9.5" r="1.8"/><path d="M4 17l5-5.5 4 4 2.5-2.5L20 17"/></svg>
-      </button>
-      <button type="button" id="viewPhoto" aria-pressed="false" aria-label="Photo" title="Photo">
-        <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" fill="#a0c4ff"/><circle cx="16" cy="9.5" r="1.8" fill="#ffe5a0"/><path d="M4 17l5-5.5 4 4 2.5-2.5L20 17v2H4z" fill="#a8e6cf"/></svg>
-      </button>
+    <div id="picTools" hidden>
+      <div class="seg" role="group" aria-label="Show">
+        <button type="button" id="viewLines" aria-pressed="true" aria-label="Coloring page" title="Coloring page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="16" cy="9.5" r="1.8"/><path d="M4 17l5-5.5 4 4 2.5-2.5L20 17"/></svg>
+        </button>
+        <button type="button" id="viewPhoto" aria-pressed="false" aria-label="Photo" title="Photo">
+          <svg viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3" fill="#a0c4ff"/><circle cx="16" cy="9.5" r="1.8" fill="#ffe5a0"/><path d="M4 17l5-5.5 4 4 2.5-2.5L20 17v2H4z" fill="#a8e6cf"/></svg>
+        </button>
+      </div>
+      <span class="vsep"></span>
+      <div class="seg">
+        <button type="button" id="fitBtn" aria-pressed="false" aria-label="Show the whole picture" title="Show the whole picture">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><rect x="7.5" y="8" width="9" height="8" rx="1" fill="#a0c4ff" stroke-width="1.6"/></svg>
+        </button>
+      </div>
+      <label id="detailWrap" hidden>Detail <input type="range" id="detail" min="0" max="1" step="0.05" value="0.35"></label>
     </div>
-    <label id="detailWrap" hidden>Detail <input type="range" id="detail" min="0" max="1" step="0.05" value="0.35"></label>
   </div>
   <div id="loader" role="status" aria-live="polite" hidden>
     <div class="ring" aria-hidden="true"></div>
@@ -745,7 +752,7 @@ function boxBlur(a, w, h, r) {
   // The photo shows straight away; its coloring-page lines follow from the worker.
   function usePicture(img) {
     const { W, H } = canvasSize();
-    setCanvases(W, H, pictureLay({ img, id: ++picSeq, art: null, kind: null, view: "photo" }, W, H));
+    setCanvases(W, H, pictureLay({ img, id: ++picSeq, art: null, kind: null, view: "photo", fit: fitPref }, W, H));
     state.undo = [];
     state.src = null;
     state.restore = null;
@@ -754,8 +761,10 @@ function boxBlur(a, w, h, r) {
     makeLines(state.lay);
   }
   // A picture layout: the photo and its lines (`art`), cover-fitted at `size`.
+  // fit "cover" fills the board (cropping), "contain" shows the whole picture.
   function pictureLay(base, W, H) {
-    return { ...base, size: Math.max(W / base.img.width, H / base.img.height) };
+    const sx = W / base.img.width, sy = H / base.img.height;
+    return { ...base, size: base.fit === "contain" ? Math.min(sx, sy) : Math.max(sx, sy) };
   }
   function syncMode() {
     const lay = state.lay, pic = !!lay.img, lines = pic && lay.view === "lines" && !!lay.art;
@@ -765,6 +774,7 @@ function boxBlur(a, w, h, r) {
     viewLines.setAttribute("aria-pressed", lines);
     viewPhoto.setAttribute("aria-pressed", pic && !lines);
     viewLines.disabled = pic && !lay.art;
+    fitBtn.setAttribute("aria-pressed", pic && lay.fit === "contain");
     detailWrap.hidden = !(lines && lay.kind === "photo");
   }
   function canvasSize() {
@@ -817,7 +827,7 @@ function boxBlur(a, w, h, r) {
     const src = state.src;
     // Once painted, keep the same line breaks so the paint still lines up.
     const painted = src.undo.length > 0;
-    const lay = src.lay.img ? pictureLay(src.lay, W, H)
+    const lay = src.lay.img ? pictureLay(state.lay, W, H)
       : painted ? fitLines(src.lay.lines, W, H) : layoutText(state.name, W, H);
     applySnapshot(src, W, H, lay);
   }
@@ -1008,7 +1018,6 @@ function boxBlur(a, w, h, r) {
         d[i] = LINE_RGB[0]; d[i + 1] = LINE_RGB[1]; d[i + 2] = LINE_RGB[2]; d[i + 3] = m.lines[p];
       }
       ax.putImageData(id, 0, 0);
-      state.src = null;
       drawLayers({ ...lay, art, kind: m.kind, view: lay.art ? lay.view : "lines" });
       syncMode();
       hideLoader();
@@ -1036,8 +1045,19 @@ function boxBlur(a, w, h, r) {
       lay.failed = true; syncMode();
     }
   }
-  viewLines.onclick = () => { if (state.lay.art) { state.src = null; drawLayers({ ...state.lay, view: "lines" }); syncMode(); } };
-  viewPhoto.onclick = () => { state.src = null; drawLayers({ ...state.lay, view: "photo" }); syncMode(); };
+  viewLines.onclick = () => { if (state.lay.art) { drawLayers({ ...state.lay, view: "lines" }); syncMode(); } };
+  viewPhoto.onclick = () => { drawLayers({ ...state.lay, view: "photo" }); syncMode(); };
+  // Cover <-> contain. Like rotating, the paint is re-mapped from the last canvas
+  // drawn on (state.src), so toggling back and forth loses nothing at the edges.
+  const fitBtn = document.getElementById("fitBtn");
+  let fitPref = "cover"; // new pictures use the last choice
+  fitBtn.onclick = () => {
+    if (!state.lay.img) return;
+    fitPref = state.lay.fit === "contain" ? "cover" : "contain";
+    if (!state.src) state.src = snapshot();
+    applySnapshot(state.src, state.W, state.H, pictureLay({ ...state.lay, fit: fitPref }, state.W, state.H));
+    syncMode();
+  };
   let detailTimer;
   detailInput.addEventListener("input", () => {
     clearTimeout(detailTimer);
